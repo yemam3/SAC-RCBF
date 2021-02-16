@@ -23,7 +23,7 @@ class CBFLayer:
         """
 
         self.env = env
-        self.Hs = self.get_cbfs(env.hazards_locations, env.hazards_radius)
+        self.get_h, self.get_dhdx = self.get_cbfs(env.hazards_locations, env.hazards_radius)
         self.u_min, self.u_max = self.get_control_bounds()
         self.gamma_b = gamma_b
         self.k_d = k_d
@@ -56,28 +56,30 @@ class CBFLayer:
 
         return u_safe
 
-    def get_cbf_qp_constraints(self, u_nom, f, g, s, sigma):
-        """Build up matrices required to solve qp using cvxopt.solvers.qp
+    def get_cbf_qp_constraints(self, u_nom, f_out, g_out, out, sigma_out):
+        """Build up matrices required to solve qp
         Program specifically solves:
             minimize_{u,eps} 0.5 * u^T P u + q^T u
                 subject to G[u,eps]^T <= h
-                           A[u,eps]^T <= b
 
         Each control barrier certificate is of the form:
-            h_cbf(s_t+1) + (1 - gamma_b)h(s_t) >= 0.
+            dh/dx^T (f_out + g_out u) >= -gamma^b h_out^3 where out here is an output of the state.
+
+        For example: in the case of unicycle dynamics, the CBF's are define with respect to the output
+        p(state) defined as p(state) = [state[0] + l_p cos(state[2]), state[1] + l_p sin(state[2])]
 
         Parameters
         ----------
         u_nom : ndarray
             Nominal control input.
-        f : ndarray
-            f(s) at this state.
-        g : ndarray
-            g(s) at this state, dimensions (n_s, n_u)
-        s : ndarray
-            current state.
-        sigma : ndarray
-            standard deviation in additive disturbance.
+        f_out : ndarray
+            f_out(s) at this state.
+        g_out : ndarray
+            g_out(s) at this state, dimensions (n_s, n_u)
+        output : ndarray
+            current output of state.
+        sigma_out : ndarray
+            standard deviation in additive disturbance after undergoing the output dynamics.
 
         Returns
         -------
@@ -91,9 +93,13 @@ class CBFLayer:
             Inequality constraint vector (G[u,eps] <= h) of size (num_constraints,)
         """
 
+
+        # hs
+        hs = self.get_h(out)
+        dhdxs = self.get_dhdx(out)
+
         n_u = u_nom.shape[0]  # dimension of control inputs
-        num_constraints = len(
-            self.Hs) + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
+        num_constraints = hs.shape[0] + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
 
         # Inequality constraints (G[u, eps] <= h)
         G = np.zeros((num_constraints, n_u + 1))  # the plus 1 is for epsilon (to make sure qp is always feasible)
@@ -101,16 +107,18 @@ class CBFLayer:
         ineq_constraint_counter = 0
 
         # First let's add the cbf constraints
-        for c in range(len(self.Hs)):
+        for c in range(hs.shape[0]):
 
             # extract current affine cbf (h = h1^T x + h0)
-            h1, h0 = self.Hs[c]
+            h_ = hs[c]
+            dhdx_ = dhdxs[c]
+
             # Add inequality constraints
-            G[ineq_constraint_counter, :n_u] = -h1 @ g  # h1^Tg(x)
+            G[ineq_constraint_counter, :n_u] = -dhdx_ @ g_out  # h1^Tg(x)
             G[ineq_constraint_counter, n_u] = -1  # for slack
 
-            h[ineq_constraint_counter] = self.gamma_b * h0 + np.dot(h1, f) + np.dot(h1 @ g, u_nom) \
-                                         - (1 - self.gamma_b) * np.dot(h1, s) - self.k_d * np.dot(np.abs(h1), sigma)
+            h[ineq_constraint_counter] = self.gamma_b * h_ + np.dot(dhdx_, f_out) + np.dot(dhdx_ @ g_out, u_nom) \
+                                         - self.k_d * np.dot(np.abs(dhdx_), sigma_out)
 
             ineq_constraint_counter += 1
 
@@ -130,7 +138,7 @@ class CBFLayer:
                 ineq_constraint_counter += 1
 
         # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
-        P = np.diag([1., 1., 1e7])  # in the original code, they use 1e24 instead of 1e7, but quadprog can't handle that...
+        P = np.diag([1.e1, 1.e-4, 1e7])  # in the original code, they use 1e24 instead of 1e7, but quadprog can't handle that...
         q = np.zeros(n_u + 1)
 
         return P, q, G, h
@@ -164,13 +172,14 @@ class CBFLayer:
             print(P, q, G, h)
             raise e
 
-        # if np.abs(sol[0][-1]) > 1e-1:
-        #     print('CBF indicates constraint violation might occur.')
+        if np.abs(sol[0][-1]) > 1e-1:
+            print('CBF indicates constraint violation might occur.')
 
         return u_safe
 
     def get_cbfs(self, hazards_locations, hazards_radius):
-        """Returns affine discrete CBFs.
+        """Returns CBF function h(x) and its derivative dh/dx(x) for each hazard. Note that the CBF is defined with
+        with respect to an output of the state.
 
         Parameters
         ----------
@@ -181,25 +190,23 @@ class CBFLayer:
 
         Returns
         -------
-        Hs : list
+        get_h :
             List of cbfs each corresponding to a constraint. Each cbf is affine (h(s) = h1^Ts + h0), as such each cbf is represented
             as a tuple of two entries: h_cbf = (h1, h0) where h1 and h0 are ndarrays.
+        get_dhdx :
         """
 
+        hazards_locations = np.array(hazards_locations)
+        collision_radius = hazards_radius + 0.07  # add a little buffer
 
-        # These are the constraints that actually keep the system safe with the real model parameters
-        # Hs = [(np.array([1, 0.055]), 0.3),
-        #       (np.array([1, -0.055]), 0.3),
-        #       (np.array([-1, 0.055]), 0.3),
-        #       (np.array([-1, -0.055]), 0.3)]
+        def get_h(state):
+            return 0.5 * (np.sum((state - hazards_locations)**2, axis=1) - collision_radius**2)  # 1/2 * (||x - x_obs||^2 - r^2)
 
-        # These are the constraints they used in the paper, which always let the pendulum fall
-        Hs = [(np.array([1, 0.05, 0.00]), 1),
-              #(np.array([1, -0.05]), 1),
-              #(np.array([-1, 0.05]), 1),
-              (np.array([-1, -0.05, 0.00]), 1)]
+        def get_dhdx(state):
+            dhdx = (state - hazards_locations)  # each row is dhdx_i for hazard i
+            return dhdx
 
-        return Hs
+        return get_h, get_dhdx
 
     def get_control_bounds(self):
         """
@@ -217,12 +224,12 @@ class CBFLayer:
 
         return u_min, u_max
 
-    def get_min_h_val(self, s):
+    def get_min_h_val(self, state):
         """
 
         Parameters
         ----------
-        s : ndarray
+        state : ndarray
             Current State
 
         Returns
@@ -232,136 +239,6 @@ class CBFLayer:
 
         """
 
-        min_h_val = float("inf")
-        for h in self.Hs:
-            h1, h0 = h
-            min_h_val = min(min_h_val, np.dot(h1, s) + h0)
-
+        min_h_val = np.min(self.get_h(state))
         return min_h_val
 
-
-if __name__ == "__main__":
-
-    # Pick the environment
-    parser = argparse.ArgumentParser(description='Arguments for testing dynamics model.')
-    parser.add_argument('--env_name', help='Name of the gym environment to use.', default='Pendulum-v0')
-    parser.add_argument('--use_inaccurate_parameters', action='store_false')
-    parser.add_argument('--k_d', default=2.0, type=float, help='CBF confidence parameter.')
-    parser.add_argument('--gamma_b', default=0.5, type=float, help='CBF conservativeness parameter.')
-    args = vars(parser.parse_args())
-
-    args['m'] = 1.4 if args['use_inaccurate_parameters'] else 1.0  # Mass of pendulum in Pendulum-v0 (1.0 default)
-    args['l'] = 1.4 if args['use_inaccurate_parameters'] else 1.0  # Length of pendulum in Pendulum-v0 (1.0 default)
-
-    print('Running simple code to check if our CBFs for the {} env actually keep us safe!'.format(args['env_name']))
-
-    # Env and Dynamics Model go hand in hand, always
-    env = tweak_env_parameters(gym.make(args['env_name']))
-    dynamics_model = DynamicsModel(env, **args)  # our model of the dynamics
-    get_f, get_g = dynamics_model.get_dynamics()  # get dynamics of discrete system x' = f(x) + g(x)u
-    cbf_wrapper = CBFLayer(env, gamma_b=args['gamma_b'], k_d=args['k_d'])
-
-    # State/Input/h_min history
-    model_actual_mean_history = []
-    model_prediction_lci_history = []
-    model_prediction_uci_history = []
-    h_min_history = []
-    u_history = []
-    num_unsafe_episodes = 0
-    num_episodes = 10
-    inaccurate_ci_count = 0  # how many steps is the actual next state outside our predicted CI
-
-    for i_episode in tqdm(range(num_episodes), desc='Episode number'):
-
-        # start from a specific initial state
-        _ = env.reset()
-        env.env.state = (np.random.random(2) - 0.5) * np.array([np.pi / 6, 0.01])
-        env.state = env.env.state
-        state = env.env.state
-        obs = dynamics_model.get_obs(state)
-
-        # For data logging purposes
-        u_history.append([])
-        h_min_history.append([])
-        model_actual_mean_history.append([[] for _ in range(dynamics_model.n_s)])
-        model_prediction_lci_history.append([[] for _ in range(dynamics_model.n_s)])
-        model_prediction_uci_history.append([[] for _ in range(dynamics_model.n_s)])
-
-        for t in range(200):
-            # print('\tstep = {}, state = {}'.format(t, state))
-
-            # Get nominal and safe actions
-            u_nom = env.unwrapped.action_space.sample() * 1/2
-            disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
-            if not args['use_inaccurate_parameters']:
-                disturb_std *= 0
-            u_safe = cbf_wrapper.get_u_safe(u_nom, get_f(state) + disturb_mean, get_g(state), state, disturb_std)
-
-            # Check if we caused a safety violation
-            if cbf_wrapper.get_min_h_val(state) < -1e-3:
-                print('\nSafety Violation, h_min = {}'.format(h_min_history[i_episode][-1]))
-                num_unsafe_episodes += 1
-                break
-
-            # Step env and get state
-            obs, reward, done, info = env.step(u_nom + u_safe)
-            next_state = dynamics_model.get_state(obs)
-            dynamics_model.append_transition(state, u_nom + u_safe, next_state)
-
-            # Check if that next_state matched our predictions
-            next_state_prior = get_f(state) + get_g(state) @ (u_nom + u_safe)
-            next_state_lci_pred = next_state_prior + disturb_mean - args['k_d']*disturb_std
-            next_state_uci_pred = next_state_prior + disturb_mean + args['k_d']*disturb_std
-            if np.any(np.bitwise_or(next_state < next_state_lci_pred-1e-3, next_state > next_state_uci_pred+1e-3)):
-                # print('\nActual next_state = {}, Problem occured at dims = {}'.format(next_state, ((np.bitwise_or(next_state < next_state_lci_pred, next_state > next_state_uci_pred)))))
-                # print('Predicted L-CI = {}, U-CI = {}, mean = {}, std = {}'.format(next_state_lci_pred, next_state_uci_pred, next_state_prior + disturb_mean, disturb_std))
-                # raise Exception('Prediction Error occurred. Actual next state was not in our prediction CI.')
-                inaccurate_ci_count += 1
-
-            # Save some data to plot later
-            u_history[i_episode].append(u_nom + u_safe)
-            h_min_history[i_episode].append(cbf_wrapper.get_min_h_val(next_state))
-            for i in range(dynamics_model.n_s):
-                model_actual_mean_history[i_episode][i].append(next_state[i])
-                model_prediction_lci_history[i_episode][i].append(next_state_lci_pred[i])
-                model_prediction_uci_history[i_episode][i].append(next_state_uci_pred[i])
-
-            # Update current state
-            state = next_state
-
-            if done:
-                # print("Episode finished after {} timesteps".format(t + 1))
-                break
-
-    # Plot All States against time
-    for i_state in range(dynamics_model.n_s):
-        for i_episode in range(len(model_actual_mean_history)):
-            plt.plot(model_actual_mean_history[i_episode][i_state])
-            plt.fill_between(range(len(model_prediction_lci_history[i_episode][i_state])), model_prediction_lci_history[i_episode][i_state], model_prediction_uci_history[i_episode][i_state], alpha=0.5)
-        plt.xlabel('Step')
-        plt.ylabel('State[{}]'.format(i_state))
-        plt.title('State[{}] vs time'.format(i_state))
-        plt.show()
-
-    # Plot h against time
-    for i in range(len(h_min_history)):
-        plt.plot(h_min_history[i])
-    plt.xlabel('Step')
-    plt.ylabel('min h(x[t])')
-    plt.title('Min h vs time')
-    plt.show()
-
-    # Plot u against time
-    for i in range(len(u_history)):
-        plt.plot(u_history[i])
-    plt.xlabel('Step')
-    plt.ylabel('u')
-    plt.title('u vs time')
-    plt.show()
-
-    print('Number of safe episodes: {}/{} -> {}%'.format(num_episodes - num_unsafe_episodes, num_episodes,
-                                                         100 * (1 - num_unsafe_episodes / num_episodes)))
-    total_num_steps = sum([len(h_min_history[i]) for i in range(len(h_min_history))])
-    print('Number of accurate-ci-steps: {}/{} -> {}%'.format(total_num_steps - inaccurate_ci_count, total_num_steps,
-                                                         100 * (1 - inaccurate_ci_count / total_num_steps)))
-    print('The inaccuracies mainly occur because we assume the disturbance is only on f(x), which doesn''t scale with u.')

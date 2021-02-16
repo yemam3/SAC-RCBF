@@ -54,17 +54,19 @@ class ObsWrapper(gym.ObservationWrapper):
         return new_obs
 
 
-def build_env(args):
+def build_env(args, random_hazards=False):
     """Build our own env using the Engine."""
 
     # Hazards (danger areas)
-    hazards_locations = [[-1., 0.], [1., 0.], [0., -1.], [0., 1.]]
-    robot_locations = [[0., 0.]]
-    hazards_radius = 0.6
+    hazard_radius = 0.6
+    if random_hazards:
+        hazards_locations = get_random_hazard_locations(n_hazards=8, hazard_radius=hazard_radius)
+    else:
+        hazards_locations = np.array([[0., 0.], [-1., 1.], [-1., -1.], [1., -1.], [1., 1.]]) * 1.5
 
     config = {
         'robot_base': args.robot_xml,
-        'robot_locations': robot_locations,
+        #'robot_locations': robot_locations,
         'task': 'goal',
         'observe_com': True,  # observe center of mass of robot xyz
         'observe_qpos': False,
@@ -73,7 +75,7 @@ def build_env(args):
         'observe_goal_dist': True,  # observe
         'hazards_num': len(hazards_locations),
         'hazards_locations': hazards_locations,
-        'hazards_size': hazards_radius,
+        'hazards_size': hazard_radius,
         'sensors_obs': ['accelerometer', 'velocimeter', 'gyro', 'magnetometer'],
         'observe_sensors': False,  # whether measurements from `sensors_obs` should be in the observation
         'observe_goal_lidar': False,  # if goals should be observed by LIDAR
@@ -87,6 +89,31 @@ def build_env(args):
         'build_resample': False
     }
 
-    env = ObsWrapper(Engine(config), hazards_locations, hazards_radius)
+    env = ObsWrapper(Engine(config), hazards_locations, hazard_radius)
 
     return env
+
+
+def get_random_hazard_locations(n_hazards, hazard_radius):
+
+    bds = np.array([[-3., -3.], [3., 3.]])
+
+    # Create buffer with boundaries
+    buffered_bds = bds
+    buffered_bds[0] += hazard_radius
+    buffered_bds[1] -= hazard_radius
+
+    hazards_locs = np.zeros((n_hazards, 2))
+
+    for i in range(n_hazards):
+        successfully_placed = False
+        iter = 0
+        while not successfully_placed and iter < 500:
+            hazards_locs[i] = (bds[1] - bds[0]) * np.random.random(2) + bds[0]
+            successfully_placed = np.all(np.linalg.norm(hazards_locs[:i] - hazards_locs[i], axis=1) > 3*hazard_radius)
+            iter += 1
+
+        if iter >= 500:
+            raise Exception('Could not place hazards in arena.')
+
+    return hazards_locs

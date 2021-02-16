@@ -10,10 +10,12 @@ import matplotlib.pyplot as plt
 from utils.util import *
 from cbf import CBFLayer
 
-def simple_controller(env, state, goal_xy):
 
-    v = 3e-3 * np.linalg.norm(goal_xy - state[:2])
-    relative_theta = np.arctan2(goal_xy[1], goal_xy[0])
+def simple_controller(env, state, goal):
+    goal_xy = goal[:2]
+    goal_dist = goal[2]  #TODO: This goal dist is fishy... look into it!
+    v = 9e-3
+    relative_theta = 0.7*np.arctan2(goal_xy[1], goal_xy[0])
     omega = relative_theta
 
     return np.clip(np.array([v, omega]), env.action_space.low, env.action_space.high)
@@ -23,7 +25,7 @@ def run_random(args):
 
     env = build_env(args)
     dynamics_model = DynamicsModel(env, args)
-    get_f, get_g = dynamics_model.get_dynamics()  # get dynamics of discrete system x' = f(x) + g(x)u
+    get_f_out, get_g_out = dynamics_model.get_cbf_output_dynamics()  # get dynamics of output p(x) used by the CBF
     cbf_wrapper = CBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
 
     obs = env.reset()
@@ -50,11 +52,11 @@ def run_random(args):
 
         disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
 
-        # act = env.action_space.sample()
-        #act = np.array([0.0010, 0.00]) if ep_step < 100 else np.array([0., 0.])
-        action = simple_controller(env, state, obs[[4, 5]])
+        action = simple_controller(env, state, obs[[4, 5, 6]])  #TODO: observations 4,5 here indicated
         assert env.action_space.contains(action)
-        action_safe = cbf_wrapper.get_u_safe(action, get_f(state) + disturb_mean, get_g(state), state, disturb_std)
+        out = dynamics_model.get_output(state)
+        disturb_out_mean, disturb_out_std = dynamics_model.get_output_disturbance_dynamics(state, disturb_mean, disturb_std)
+        action_safe = cbf_wrapper.get_u_safe(action, get_f_out(state) + disturb_out_mean, get_g_out(state), out, disturb_out_std)
 
         # Get confidence intervals
         next_state_pred, next_state_std = dynamics_model.predict_next_state(state, action + action_safe)
@@ -82,7 +84,7 @@ def run_random(args):
         ep_ret += reward
         ep_cost += info.get('cost', 0)
         ep_step += 1
-        env.render()
+        # env.render()
 
         obs = observation2
         state = next_state
@@ -120,8 +122,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dynamics_mode', default='unicycle')
     parser.add_argument('--k_d', default=1.5, type=float)
-    parser.add_argument('--gamma_b', default=0.5, type=float)
+    parser.add_argument('--gamma_b', default=100, type=float)
     parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
+    parser.add_argument('--l_p', default=0.03, type=float, help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
     args = parser.parse_args()
 
     args.robot_xml = os.getcwd() + args.robot_xml
