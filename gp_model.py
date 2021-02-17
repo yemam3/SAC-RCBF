@@ -9,7 +9,7 @@ TODO: GPyTorch can kind of support online learning if needed... https://github.c
 import torch
 import gpytorch
 
-from utils.util import to_tensor, to_numpy
+from util import to_tensor, to_numpy
 
 
 class BaseGPy(gpytorch.models.ExactGP):

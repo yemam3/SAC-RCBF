@@ -172,8 +172,8 @@ class CBFLayer:
             print(P, q, G, h)
             raise e
 
-        if np.abs(sol[0][-1]) > 1e-1:
-            print('CBF indicates constraint violation might occur.')
+        # if np.abs(sol[0][-1]) > 1e-1:
+        #     print('CBF indicates constraint violation might occur.')
 
         return u_safe
 

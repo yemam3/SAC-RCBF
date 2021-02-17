@@ -1,8 +1,6 @@
 import numpy as np
-import argparse
 import torch
-from utils.gp_model import GPyDisturbanceEstimator
-from copy import deepcopy
+from gp_model import GPyDisturbanceEstimator
 
 DYNAMICS_MODE = {'unicycle': {'n_s': 3, 'n_u': 2}}
 MAX_STD = {'unicycle': [1e-1, 1e-1, 1e-1]}

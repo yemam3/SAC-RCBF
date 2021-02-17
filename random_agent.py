@@ -1,13 +1,11 @@
 import argparse
-import gym
 import safety_gym  # noqa
 import numpy as np  # noqa
 from build_env import build_env
-import os
 from dynamics import DynamicsModel
 from copy import deepcopy
 import matplotlib.pyplot as plt
-from utils.util import *
+from util import *
 from cbf import CBFLayer
 
 

@@ -1,7 +1,7 @@
 from safety_gym.envs.engine import Engine
 import gym
 import numpy as np
-from utils.util import mat_to_euler_2d
+from util import mat_to_euler_2d
 
 """
 More info can be obtained here: 
@@ -31,6 +31,8 @@ class ObsWrapper(gym.ObservationWrapper):
         self.dt = DT
         self.hazards_locations = hazards_locations
         self.hazards_radius = hazards_radius
+        self._max_episode_steps = 1000
+        self.observation_space = gym.spaces.Box(low=-1e10, high=1e10, shape=(7,))
 
     def observation(self, obs):
         """Organize the observation to understand what's going on
