@@ -3,7 +3,7 @@ import torch
 from gp_model import GPyDisturbanceEstimator
 
 DYNAMICS_MODE = {'unicycle': {'n_s': 3, 'n_u': 2}}
-MAX_STD = {'unicycle': [1e-1, 1e-1, 1e-1]}
+MAX_STD = {'unicycle': [2e-1, 2e-1, 2e-1]}
 
 
 class DynamicsModel:
