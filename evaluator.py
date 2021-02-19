@@ -25,10 +25,11 @@ class Evaluator(object):
 
             # Make sure to start from a safe state
             if cbf_wrapper and dynamics_model:
-                state = None
-                while state is None or cbf_wrapper.get_min_h_val(state) < 1e-4:
+                out = None
+                while out is None or cbf_wrapper.get_min_h_val(out) < 1e-4:
                     observation = env.reset()
                     state = dynamics_model.get_state(observation)
+                    out = dynamics_model.get_output(state)
 
             episode_steps = 0
             episode_reward = 0.

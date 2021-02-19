@@ -174,17 +174,25 @@ def test(num_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, eva
     except:
         pass
 
-    get_f, get_g = dynamics_model.get_dynamics()  # get dynamics of discrete system x' = f(x) + g(x)u
+    # Get output functions p(x) dynamics
+    get_f_out, get_g_out = dynamics_model.get_cbf_output_dynamics()  # get dynamics of output p(x) used by the CBF
 
     def wrapped_policy(observation):
+
         action = agent.select_action(observation, evaluate=True)
+
         action_comp = compensator(observation)
         state = dynamics_model.get_state(observation)
+        # Get disturbance on output
         disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
-        u_safe = cbf_wrapper.get_u_safe(action + action_comp, get_f(state) + disturb_mean, get_g(state), state,
-                                        disturb_std)
+        disturb_out_mean, disturb_out_std = dynamics_model.get_output_disturbance_dynamics(state,
+                                                                                           disturb_mean, disturb_std)
+
+        action_safe = cbf_wrapper.get_u_safe(action + action_comp, get_f_out(state) + disturb_out_mean,
+                                             get_g_out(state),
+                                             dynamics_model.get_output(state), disturb_out_std)
         # print('state = {}, action = {}, action_comp = {}, u_safe = {}'.format(state, action, action_comp, u_safe))
-        return action + action_comp + u_safe
+        return action + action_comp + action_safe
 
     for i in range(num_episodes):
         validate_reward = evaluate(env, wrapped_policy, cbf_wrapper=cbf_wrapper, dynamics_model=dynamics_model,
@@ -193,14 +201,6 @@ def test(num_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, eva
 
 
 if __name__ == "__main__":
-
-
-    # Create an experiment with your api key:
-    experiment = Experiment(
-        api_key="FN3hKqygLp0oA32u1zSm7YtLF",
-        project_name="rl-cbf-safetygym",
-        workspace="yemam3",
-    )
 
     parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
     parser.add_argument('--mode', default='train', type=str, help='support option: train/test')
@@ -257,13 +257,21 @@ if __name__ == "__main__":
     parser.add_argument('--no_comp', action='store_true', dest='no_comp', help='If selected, the compensator won''t be used.')
     args = parser.parse_args()
 
-    # Log args on comet.ml
-    experiment.log_parameters(vars(args))
-
     args.robot_xml = str(Path(os.getcwd()).parent) + args.robot_xml
     args.output = get_output_folder(args.output, args.env_name)
     if args.resume == 'default':
         args.resume = os.getcwd() + '/output/{}-run0'.format(args.env_name)
+
+    # Create an experiment with your api key:
+    if args.mode == 'train':
+        experiment = Experiment(
+            api_key="FN3hKqygLp0oA32u1zSm7YtLF",
+            project_name="rl-cbf-safetygym",
+            workspace="yemam3",
+        )
+
+        # Log args on comet.ml
+        experiment.log_parameters(vars(args))
 
     # Environment
     env = build_env(args)
@@ -286,7 +294,7 @@ if __name__ == "__main__":
     if args.mode == 'train':
         train(agent, cbf_wrapper, env, dynamics_model, args, experiment)
     elif args.mode == 'test':
-        test(args.validate_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, evaluate, args.output, visualize=False)
+        test(args.validate_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, evaluate, args.resume, visualize=False, debug=True)
 
     env.close()
 
