@@ -1,11 +1,12 @@
+# import comet_ml at the top of your file
+from comet_ml import Experiment
+
 import argparse
-import datetime
 import itertools
 import torch
 
 from compensator import Compensator
 from pytorch_sac.sac import SAC
-from torch.utils.tensorboard import SummaryWriter
 from pytorch_sac.replay_memory import ReplayMemory
 from cbf import CBFLayer
 from dynamics import DynamicsModel
@@ -15,7 +16,8 @@ from util import prGreen, get_output_folder, prYellow
 from pathlib import Path
 from evaluator import Evaluator
 
-def train(agent, cbf_wrapper, env, dynamics_model, args, writer):
+
+def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
     # Memory
     memory = ReplayMemory(args.replay_size, args.seed)
@@ -69,11 +71,12 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, writer):
                     critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
                                                                                                          args.batch_size,
                                                                                                          updates)
-                    writer.add_scalar('loss/critic_1', critic_1_loss, updates)
-                    writer.add_scalar('loss/critic_2', critic_2_loss, updates)
-                    writer.add_scalar('loss/policy', policy_loss, updates)
-                    writer.add_scalar('loss/entropy_loss', ent_loss, updates)
-                    writer.add_scalar('entropy_temperature/alpha', alpha, updates)
+
+                    experiment.log_metric('loss/critic_1', critic_1_loss, updates)
+                    experiment.log_metric('loss/critic_2', critic_2_loss, step=updates)
+                    experiment.log_metric('loss/policy', policy_loss, step=updates)
+                    experiment.log_metric('loss/entropy_loss', ent_loss, step=updates)
+                    experiment.log_metric('entropy_temperature/alpha', alpha, step=updates)
                     updates += 1
 
             next_obs, reward, done, info = env.step(action + action_comp + action_safe)  # Step
@@ -94,7 +97,7 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, writer):
                 dynamics_model.append_transition(state, action + action_comp + action_safe, next_state)
 
             # [optional] save intermediate model
-            if total_numsteps % int(args.num_steps / 3) == 0:
+            if total_numsteps % int(args.num_steps / 10) == 0:
                 agent.save_model(args.output)
                 dynamics_model.save_disturbance_models(args.output)
                 if not args.no_comp:
@@ -118,8 +121,8 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, writer):
             compensator.train(compensator_rollouts)
             # compensator_rollouts = []
 
-        writer.add_scalar('reward/train', episode_reward, i_episode)
-        writer.add_scalar('cost/train', episode_cost, i_episode)
+        experiment.log_metric('reward/train', episode_reward, step=i_episode)
+        experiment.log_metric('cost/train', episode_cost, step=i_episode)
         prGreen("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}, cost: {}".format(i_episode, total_numsteps,
                                                                                       episode_steps,
                                                                                       round(episode_reward, 2), round(episode_cost, 2)))
@@ -153,7 +156,8 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, writer):
                 avg_cost += episode_cost
             avg_reward /= episodes
             avg_cost /= episodes
-            writer.add_scalar('avg_reward/test', avg_reward, i_episode)
+            experiment.log_metric('avg_reward/test', avg_reward, step=i_episode)
+            experiment.log_metric('avg_cost/test', avg_cost, step=i_episode)
 
             print("----------------------------------------")
             print("Test Episodes: {}, Avg. Reward: {}, Avg. Cost: {}".format(episodes, round(avg_reward, 2), round(avg_cost, 2)))
@@ -189,6 +193,14 @@ def test(num_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, eva
 
 
 if __name__ == "__main__":
+
+
+    # Create an experiment with your api key:
+    experiment = Experiment(
+        api_key="FN3hKqygLp0oA32u1zSm7YtLF",
+        project_name="rl-cbf-safetygym",
+        workspace="yemam3",
+    )
 
     parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
     parser.add_argument('--mode', default='train', type=str, help='support option: train/test')
@@ -245,6 +257,9 @@ if __name__ == "__main__":
     parser.add_argument('--no_comp', action='store_true', dest='no_comp', help='If selected, the compensator won''t be used.')
     args = parser.parse_args()
 
+    # Log args on comet.ml
+    experiment.log_parameters(vars(args))
+
     args.robot_xml = str(Path(os.getcwd()).parent) + args.robot_xml
     args.output = get_output_folder(args.output, args.env_name)
     if args.resume == 'default':
@@ -267,14 +282,9 @@ if __name__ == "__main__":
 
     evaluate = Evaluator(args.validate_episodes, args.validate_steps, args.output)
 
-    # Tensorboard
-    writer = SummaryWriter(
-        args.output + '/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
-                                      args.policy, "autotune" if args.automatic_entropy_tuning else ""))
-
     # Train
     if args.mode == 'train':
-        train(agent, cbf_wrapper, env, dynamics_model, args, writer)
+        train(agent, cbf_wrapper, env, dynamics_model, args, experiment)
     elif args.mode == 'test':
         test(args.validate_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, evaluate, args.output, visualize=False)
 
