@@ -11,7 +11,7 @@ from cbf import CBFLayer
 
 def simple_controller(env, state, goal):
     goal_xy = goal[:2]
-    goal_dist = goal[2]  #TODO: This goal dist is fishy... look into it!
+    goal_dist = -np.log(goal[2])  # the observation is np.exp(-goal_dist)
     v = 9e-3
     relative_theta = 0.7*np.arctan2(goal_xy[1], goal_xy[0])
     omega = relative_theta

@@ -50,9 +50,9 @@ class ObsWrapper(gym.ObservationWrapper):
         """
 
         theta = mat_to_euler_2d(self.env.data.get_body_xmat('robot'))
-
-        robot_state = np.array([obs[0], obs[1], np.cos(theta), np.sin(theta)])
-        new_obs = np.append(robot_state, obs[3:])
+        pos = self.env.world.robot_pos()
+        robot_state = np.array([pos[0], pos[1], np.cos(theta), np.sin(theta)])
+        new_obs = np.append(robot_state, [obs['goal_compass'][0], obs['goal_compass'][1], float(obs['goal_dist'])])
         return new_obs
 
 
@@ -88,7 +88,8 @@ def build_env(args, random_hazards=False):
         'lidar_max_dist': 3,
         'lidar_num_bins': 16,
         'vases_num': 0,
-        'build_resample': False
+        'build_resample': False,
+        'observation_flatten': False
     }
 
     env = ObsWrapper(Engine(config), hazards_locations, hazard_radius)

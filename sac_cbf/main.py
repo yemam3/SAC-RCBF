@@ -15,12 +15,15 @@ import os
 from util import prGreen, get_output_folder, prYellow
 from pathlib import Path
 from evaluator import Evaluator
+from generate_rollouts import generate_model_rollouts
 
 
 def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
     # Memory
     memory = ReplayMemory(args.replay_size, args.seed)
+
+    memory_model = ReplayMemory(args.replay_size, args.seed)
 
     # Training Loop
     total_numsteps = 0
@@ -64,13 +67,32 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
             action_safe = cbf_wrapper.get_u_safe(action + action_comp, get_f_out(state) + disturb_out_mean, get_g_out(state), out, disturb_out_std)
 
-            if len(memory) > args.batch_size:
+            # Generate Model rollouts
+            if args.model_based and len(memory) > 0 and total_numsteps % int(args.batch_size/2) == 0:
+                memory_model = generate_model_rollouts(env, memory_model, memory, agent, cbf_wrapper, dynamics_model, env.unwrapped.goal_pos[:2],
+                                                       compensator,
+                                                       k_horizon=1,
+                                                       batch_size=min(len(memory), int(args.batch_size/2)),
+                                                       warmup=args.start_steps > total_numsteps)
+
+            # If using model-based RL then we only need to have enough data for the real portion of the replay buffer
+            if len(memory) > (args.real_ratio**args.model_based) * args.batch_size:
+
                 # Number of updates per step in environment
                 for i in range(args.updates_per_step):
+
                     # Update parameters of all the networks
-                    critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
-                                                                                                         args.batch_size,
-                                                                                                         updates)
+                    if args.model_based:
+                        # Update parameters of all the networks
+                        critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
+                                                                                                             args.batch_size,
+                                                                                                             updates,
+                                                                                                             memory_model,
+                                                                                                             args.real_ratio)
+                    else:
+                        critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
+                                                                                                           args.batch_size,
+                                                                                                           updates)
 
                     experiment.log_metric('loss/critic_1', critic_1_loss, updates)
                     experiment.log_metric('loss/critic_2', critic_2_loss, step=updates)
@@ -112,21 +134,23 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
             obs = next_obs
 
-        if total_numsteps > args.num_steps:
-            break
-
         # Train compensator
         if not args.no_comp and i_episode < args.comp_train_episodes:
             compensator_rollouts.append(episode_rollout)
             compensator.train(compensator_rollouts)
             # compensator_rollouts = []
 
+        if total_numsteps > args.num_steps:
+            break
+
+        # Comet.ml logging
         experiment.log_metric('reward/train', episode_reward, step=i_episode)
         experiment.log_metric('cost/train', episode_cost, step=i_episode)
         prGreen("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}, cost: {}".format(i_episode, total_numsteps,
                                                                                       episode_steps,
-                                                                                      round(episode_reward, 2), round(episode_cost, 2)))
+                                                                                             round(episode_reward, 2), round(episode_cost, 2)))
 
+        # Evaluation
         if i_episode % 10 == 0 and args.eval is True:
             avg_reward = 0.
             avg_cost = 0.
@@ -255,6 +279,9 @@ if __name__ == "__main__":
     parser.add_argument('--comp_rate', default=0.005, type=float, help='Compensator learning rate')
     parser.add_argument('--comp_train_episodes', default=20, type=int, help='Number of initial episodes to train compensator for.')
     parser.add_argument('--no_comp', action='store_true', dest='no_comp', help='If selected, the compensator won''t be used.')
+    # Model Based Learning
+    parser.add_argument('--model_based', action='store_true', dest='model_based', help='If selected, will use data from the model to train the RL agent.')
+    parser.add_argument('--real_ratio', default=0.5, type=float, help='Portion of data obtained from real replay buffer for training.')
     args = parser.parse_args()
 
     args.robot_xml = str(Path(os.getcwd()).parent) + args.robot_xml

@@ -151,7 +151,7 @@ class DynamicsModel:
         """
 
         if self.dynamics_mode == 'unicycle':
-            obs = np.array([state[0], state[1], np.cos(state[0]), np.sin(state[0])])
+            obs = np.array([state[0], state[1], np.cos(state[2]), np.sin(state[2])])
             return obs
 
     def get_cbf_output_dynamics(self):
