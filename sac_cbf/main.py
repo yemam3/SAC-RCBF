@@ -68,27 +68,29 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
             action_safe = cbf_wrapper.get_u_safe(action + action_comp, get_f_out(state) + disturb_out_mean, get_g_out(state), out, disturb_out_std)
 
             # Generate Model rollouts
-            if args.model_based and len(memory) > 0 and total_numsteps % int(args.batch_size/2) == 0:
+            if args.model_based and len(memory) > 0:
                 memory_model = generate_model_rollouts(env, memory_model, memory, agent, cbf_wrapper, dynamics_model, env.unwrapped.goal_pos[:2],
                                                        compensator,
-                                                       k_horizon=1,
-                                                       batch_size=min(len(memory), int(args.batch_size/2)),
+                                                       k_horizon=args.k_horizon,
+                                                       batch_size=min(len(memory), args.rollout_batch_size),
                                                        warmup=args.start_steps > total_numsteps)
 
             # If using model-based RL then we only need to have enough data for the real portion of the replay buffer
-            if len(memory) > (args.real_ratio**args.model_based) * args.batch_size:
+            if len(memory) + len(memory_model) * args.model_based > args.batch_size:
 
                 # Number of updates per step in environment
                 for i in range(args.updates_per_step):
 
                     # Update parameters of all the networks
                     if args.model_based:
+                        # Pick the ratio of data to be sampled from the real vs model buffers
+                        real_ratio = max(min(args.real_ratio, len(memory) / args.batch_size), 1 - len(memory_model) / args.batch_size)
                         # Update parameters of all the networks
                         critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
                                                                                                              args.batch_size,
                                                                                                              updates,
                                                                                                              memory_model,
-                                                                                                             args.real_ratio)
+                                                                                                             real_ratio)
                     else:
                         critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
                                                                                                            args.batch_size,
@@ -102,6 +104,8 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
                     updates += 1
 
             next_obs, reward, done, info = env.step(action + action_comp + action_safe)  # Step
+            if 'cost_exception' in info:
+                prYellow('Cost exception occured.')
             episode_steps += 1
             total_numsteps += 1
             episode_reward += reward
@@ -115,7 +119,7 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
             # Update state and store transition for GP model learning
             next_state = dynamics_model.get_state(next_obs)
-            if episode_steps % 2 == 0:
+            if episode_steps % 2 == 0 and episode_steps < 2500:
                 dynamics_model.append_transition(state, action + action_comp + action_safe, next_state)
 
             # [optional] save intermediate model
@@ -152,6 +156,7 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
         # Evaluation
         if i_episode % 10 == 0 and args.eval is True:
+            print('Size of replay buffers: real : {}, \t\t model : {}'.format(len(memory), len(memory_model)))
             avg_reward = 0.
             avg_cost = 0.
             episodes = 10
@@ -281,7 +286,9 @@ if __name__ == "__main__":
     parser.add_argument('--no_comp', action='store_true', dest='no_comp', help='If selected, the compensator won''t be used.')
     # Model Based Learning
     parser.add_argument('--model_based', action='store_true', dest='model_based', help='If selected, will use data from the model to train the RL agent.')
-    parser.add_argument('--real_ratio', default=0.5, type=float, help='Portion of data obtained from real replay buffer for training.')
+    parser.add_argument('--real_ratio', default=0.3, type=float, help='Portion of data obtained from real replay buffer for training.')
+    parser.add_argument('--k_horizon', default=1, type=int, help='horizon of model-based rollouts')
+    parser.add_argument('--rollout_batch_size', default=5, type=int, help='Size of initial states batch to rollout from.')
     args = parser.parse_args()
 
     args.robot_xml = str(Path(os.getcwd()).parent) + args.robot_xml
@@ -316,6 +323,10 @@ if __name__ == "__main__":
     compensator = Compensator(env.observation_space.shape[0], env.action_space.shape[0], env.action_space.low, env.action_space.high, args)
 
     evaluate = Evaluator(args.validate_episodes, args.validate_steps, args.output)
+
+    # If model based, we warm up in the model too
+    if args.model_based:
+        args.start_steps /= (1 + args.rollout_batch_size)
 
     # Train
     if args.mode == 'train':

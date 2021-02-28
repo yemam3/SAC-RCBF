@@ -17,9 +17,26 @@ def generate_model_rollouts(env, memory_model, memory, agent, cbf_wrapper, dynam
         done = not mask_batch[i]
         obs = init_obs
 
+        # # TODO: Delete only for debugging
+        # state = dynamics_model.get_state(obs_batch[i])
+        # next_state = dynamics_model.get_state(next_obs_batch[i])
+        # # Get confidence intervals
+        # next_state_pred, next_state_std = dynamics_model.predict_next_state(state, action_batch[i])
+        # next_state_lci_pred = next_state_pred - 2.0 * next_state_std
+        # next_state_uci_pred = next_state_pred + 2.0 * next_state_std
+        # if np.any(next_state > next_state_uci_pred) or np.any(next_state < next_state_lci_pred):
+        #     print('state = {},\t\t action = {}'.format(state, action_batch[i]))
+        #     print('next_state \t\t\t=\t{}'.format(next_state))
+        #     print('predicted_next_state \t=\t{}'.format(next_state_pred))
+        #     print('bounds: lci = {}, uci = {}'.format(next_state_lci_pred, next_state_uci_pred))
+        #     raise Exception('Actual next state outside model prediction.')
+
         for k in range(k_horizon):
 
-            if done or reward_batch[i] < -5.0:
+            if done:
+                if done:
+                    print('reward for done step = {}'.format(reward_batch[i]))
+                memory_model.push(obs_batch[i], action_batch[i], reward_batch[i], next_obs_batch[i], mask_batch[i])  # Append transition to memory
                 break
 
             wrapped_action = wrapped_policy(obs)
