@@ -12,8 +12,8 @@ from cbf import CBFLayer
 def simple_controller(env, state, goal):
     goal_xy = goal[:2]
     goal_dist = -np.log(goal[2])  # the observation is np.exp(-goal_dist)
-    v = 9e-3
-    relative_theta = 0.7*np.arctan2(goal_xy[1], goal_xy[0])
+    v = 0.4 * goal_dist
+    relative_theta = 1.0*np.arctan2(goal_xy[1], goal_xy[0])
     omega = relative_theta
 
     return np.clip(np.array([v, omega]), env.action_space.low, env.action_space.high)
@@ -39,7 +39,7 @@ def run_random(args):
     model_prediction_uci_history = [[] for _ in range(dynamics_model.n_s)]
     model_prediction_std_history = [[] for _ in range(dynamics_model.n_s)]
 
-    for i_step in range(3000):
+    for i_step in range(30000):
 
         if done:
             print('Episode Return: %.3f \t Episode Cost: %.3f'%(ep_ret, ep_cost))
@@ -119,10 +119,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--dynamics_mode', default='unicycle')
-    parser.add_argument('--k_d', default=1.5, type=float)
-    parser.add_argument('--gamma_b', default=100, type=float)
+    parser.add_argument('--k_d', default=2.0, type=float)
+    parser.add_argument('--gamma_b', default=1000, type=float)
     parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
-    parser.add_argument('--l_p', default=0.03, type=float, help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
+    parser.add_argument('--l_p', default=0.003, type=float, help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
     args = parser.parse_args()
 
     args.robot_xml = os.getcwd() + args.robot_xml

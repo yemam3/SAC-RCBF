@@ -117,7 +117,7 @@ class CBFLayer:
             G[ineq_constraint_counter, :n_u] = -dhdx_ @ g_out  # h1^Tg(x)
             G[ineq_constraint_counter, n_u] = -1  # for slack
 
-            h[ineq_constraint_counter] = self.gamma_b * h_ + np.dot(dhdx_, f_out) + np.dot(dhdx_ @ g_out, u_nom) \
+            h[ineq_constraint_counter] = self.gamma_b * (h_**3) + np.dot(dhdx_, f_out) + np.dot(dhdx_ @ g_out, u_nom) \
                                          - self.k_d * np.dot(np.abs(dhdx_), sigma_out)
 
             ineq_constraint_counter += 1

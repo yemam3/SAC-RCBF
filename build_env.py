@@ -11,7 +11,7 @@ https://github.com/openai/safety-gym/blob/master/safety_gym/envs/engine.py
 DT = 0.002  # timestep
 
 
-class ObsWrapper(gym.ObservationWrapper):
+class ObsWrapper(gym.Wrapper):
 
     def __init__(self, env, hazards_locations, hazards_radius):
         """
@@ -33,8 +33,9 @@ class ObsWrapper(gym.ObservationWrapper):
         self.hazards_radius = hazards_radius
         self._max_episode_steps = 1000
         self.observation_space = gym.spaces.Box(low=-1e10, high=1e10, shape=(7,))
+        self.env = env
 
-    def observation(self, obs):
+    def step(self, action):
         """Organize the observation to understand what's going on
 
         Parameters
@@ -49,11 +50,29 @@ class ObsWrapper(gym.ObservationWrapper):
 
         """
 
+        obs, reward, done, info = self.env.step(action)
+        new_obs = self.observation(obs)
+
+        # Include constraint cost in reward
+        pos = self.env.world.robot_pos()
+        if np.any(np.sum((pos[:2] - self.hazards_locations)**2, axis=1) < self.hazards_radius**2):
+            reward += -0.2
+
+        return new_obs, reward, done, info
+
+    def observation(self, obs):
+
+        # Re-organize observation
         theta = mat_to_euler_2d(self.env.data.get_body_xmat('robot'))
         pos = self.env.world.robot_pos()
         robot_state = np.array([pos[0], pos[1], np.cos(theta), np.sin(theta)])
         new_obs = np.append(robot_state, [obs['goal_compass'][0], obs['goal_compass'][1], float(obs['goal_dist'])])
         return new_obs
+
+    def reset(self):
+
+        obs = self.env.reset()
+        return self.observation(obs)
 
 
 def build_env(args, random_hazards=False):
@@ -67,6 +86,7 @@ def build_env(args, random_hazards=False):
         hazards_locations = np.array([[0., 0.], [-1., 1.], [-1., -1.], [1., -1.], [1., 1.]]) * 1.5
 
     config = {
+        'num_steps': 1000,  # Maximum number of environment steps in an episode
         'robot_base': args.robot_xml,
         #'robot_locations': robot_locations,
         'task': 'goal',
