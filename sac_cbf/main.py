@@ -275,8 +275,8 @@ if __name__ == "__main__":
     parser.add_argument('--validate_steps', default=1000, type=int, help='how many steps to perform a validate experiment')
     # CBF, Dynamics, Env Args
     parser.add_argument('--dynamics_mode', default='unicycle')
-    parser.add_argument('--k_d', default=2.0, type=float)
-    parser.add_argument('--gamma_b', default=1000, type=float)
+    parser.add_argument('--k_d', default=1.5, type=float)
+    parser.add_argument('--gamma_b', default=100, type=float)
     parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
     parser.add_argument('--l_p', default=0.003, type=float,
                         help="Point Robot only: Look-ahead distance for unicycle dynamics output.")

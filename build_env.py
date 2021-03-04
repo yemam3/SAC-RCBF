@@ -54,9 +54,9 @@ class ObsWrapper(gym.Wrapper):
         new_obs = self.observation(obs)
 
         # Include constraint cost in reward
-        pos = self.env.world.robot_pos()
-        if np.any(np.sum((pos[:2] - self.hazards_locations)**2, axis=1) < self.hazards_radius**2):
-            reward += -0.2
+        # pos = self.env.world.robot_pos()
+        # if np.any(np.sum((pos[:2] - self.hazards_locations)**2, axis=1) < self.hazards_radius**2):
+        #     reward += -0.2
 
         return new_obs, reward, done, info
 
