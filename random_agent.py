@@ -122,7 +122,7 @@ if __name__ == '__main__':
     parser.add_argument('--k_d', default=1.5, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
     parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
-    parser.add_argument('--l_p', default=0.003, type=float, help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
+    parser.add_argument('--l_p', default=0.03, type=float, help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
     args = parser.parse_args()
 
     args.robot_xml = os.getcwd() + args.robot_xml

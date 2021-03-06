@@ -12,6 +12,8 @@ from cbf import CBFLayer
 from dynamics import DynamicsModel
 from build_env import *
 import os
+
+from unicycle_env import UnicycleEnv
 from util import prGreen, get_output_folder, prYellow
 from pathlib import Path
 from evaluator import Evaluator
@@ -119,7 +121,7 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
             # Update state and store transition for GP model learning
             next_state = dynamics_model.get_state(next_obs)
-            if episode_steps % 2 == 0 and episode_steps < 2500:
+            if episode_steps % 2 == 0:
                 dynamics_model.append_transition(state, action + action_comp + action_safe, next_state)
 
             # [optional] save intermediate model
@@ -266,7 +268,7 @@ if __name__ == "__main__":
                         help='Steps sampling random actions (default: 10000)')
     parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
                         help='Value target update per no. of updates per step (default: 1)')
-    parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
+    parser.add_argument('--replay_size', type=int, default=10000000, metavar='N',
                         help='size of replay buffer (default: 10000000)')
     parser.add_argument('--cuda', action="store_true",
                         help='run on CUDA (default: False)')
@@ -278,7 +280,7 @@ if __name__ == "__main__":
     parser.add_argument('--k_d', default=1.5, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
     parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
-    parser.add_argument('--l_p', default=0.003, type=float,
+    parser.add_argument('--l_p', default=0.03, type=float,
                         help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
     # Compensator
     parser.add_argument('--comp_rate', default=0.005, type=float, help='Compensator learning rate')
@@ -300,7 +302,7 @@ if __name__ == "__main__":
     if args.mode == 'train':
         experiment = Experiment(
             api_key="FN3hKqygLp0oA32u1zSm7YtLF",
-            project_name="rl-cbf-safetygym",
+            project_name="rl-cbf-unicycle",
             workspace="yemam3",
         )
 
@@ -308,7 +310,8 @@ if __name__ == "__main__":
         experiment.log_parameters(vars(args))
 
     # Environment
-    env = build_env(args)
+    # env = build_env(args)
+    env = UnicycleEnv(noisy=True)
     if args.seed > 0:
         env.seed(args.seed)
         env.action_space.seed(args.seed)
