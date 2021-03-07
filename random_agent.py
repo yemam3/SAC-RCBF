@@ -6,7 +6,7 @@ from dynamics import DynamicsModel
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from util import *
-from cbf import CBFLayer
+from cbf_cascade import CascadeCBFLayer
 
 
 def simple_controller(env, state, goal):
@@ -23,8 +23,7 @@ def run_random(args):
 
     env = build_env(args)
     dynamics_model = DynamicsModel(env, args)
-    get_f_out, get_g_out = dynamics_model.get_cbf_output_dynamics()  # get dynamics of output p(x) used by the CBF
-    cbf_wrapper = CBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
+    cbf_wrapper = CascadeCBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
 
     obs = env.reset()
     done = False
@@ -50,11 +49,9 @@ def run_random(args):
 
         disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
 
-        action = simple_controller(env, state, obs[[4, 5, 6]])  #TODO: observations 4,5 here indicated
+        action = simple_controller(env, state, obs[-3:])  #TODO: observations last 3 indicated
         assert env.action_space.contains(action)
-        out = dynamics_model.get_output(state)
-        disturb_out_mean, disturb_out_std = dynamics_model.get_output_disturbance_dynamics(state, disturb_mean, disturb_std)
-        action_safe = cbf_wrapper.get_u_safe(action, get_f_out(state) + disturb_out_mean, get_g_out(state), out, disturb_out_std)
+        action_safe = cbf_wrapper.get_u_safe(action, state, disturb_mean, disturb_std)
 
         # Get confidence intervals
         next_state_pred, next_state_std = dynamics_model.predict_next_state(state, action + action_safe)
@@ -118,7 +115,8 @@ def run_random(args):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dynamics_mode', default='unicycle')
+    parser.add_argument('--env-name', default="CustomSafeExp-PointGoal-v0",
+                        help='Doesn''t really matter, just for saving purposes')
     parser.add_argument('--k_d', default=1.5, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
     parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')

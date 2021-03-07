@@ -2,8 +2,9 @@ import numpy as np
 import torch
 from gp_model import GPyDisturbanceEstimator
 
-DYNAMICS_MODE = {'unicycle': {'n_s': 3, 'n_u': 2}}
-MAX_STD = {'unicycle': [2e-1, 2e-1, 2e-1]}
+DYNAMICS_MODE = {'unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
+                 'unicycle_2': {'n_s': 5, 'n_u': 2}}  # state = [x y θ v ω]
+MAX_STD = {'unicycle': [2e-1, 2e-1, 2e-1], 'unicycle_2': [0, 0, 0, 2e-1, 2e-1]}
 
 
 class DynamicsModel:
@@ -17,8 +18,8 @@ class DynamicsModel:
             Gym environment.
         """
 
-        self.dynamics_mode = args.dynamics_mode
         self.env = env
+        self.dynamics_mode = env.dynamics_mode
         # Get Dynamics
         self.get_f, self.get_g = self.get_dynamics()
         self.n_s = DYNAMICS_MODE[self.dynamics_mode]['n_s']
@@ -98,8 +99,6 @@ class DynamicsModel:
                 Control dynamics of the continuous system x' = f(x) + g(x)u
         """
 
-        dt = self.env.dt
-
         if self.dynamics_mode == 'unicycle':
 
             def get_f(state):
@@ -113,7 +112,28 @@ class DynamicsModel:
                                 [            0, 1.0]])
                 return g_x
 
-            return get_f, get_g
+        elif self.dynamics_mode == 'unicycle_2':
+
+            def get_f(state):
+                f_x = np.array([    state[3] * np.cos(state[2]),   # x_dot = v*cos(θ)
+                                    state[3] * np.sin(state[2]),   # y_dot = v*sin(θ)
+                                                       state[4],   # θ_dot = ω
+                                                              0,   # v_dot = u^v
+                                                              0])  # ω_dot = u^ω
+                return f_x
+
+            def get_g(state):
+
+                g_x = np.zeros((5, 2))
+                g_x[3, 0] = 1  # v_dot = u^v
+                g_x[4, 1] = 1  # ω_dot = u^ω
+                return g_x
+
+
+        else:
+            raise Exception('Unknown Dynamics mode.')
+
+        return get_f, get_g
 
     def get_state(self, obs):
         """Given the observation, this function does the pre-processing necessary and returns the state.
@@ -133,7 +153,12 @@ class DynamicsModel:
         if self.dynamics_mode == 'unicycle':
             theta = np.arctan2(obs[3], obs[2])
             state = np.array([obs[0], obs[1], theta])
-            return state
+        elif self.dynamics_mode == 'unicycle_2':
+            theta = np.arctan2(obs[3], obs[2])
+            state = np.array([obs[0], obs[1], theta, obs[4], obs[5]])
+        else:
+            raise Exception('Unknown dynamics')
+        return state
 
     def get_obs(self, state):
         """Given the state, this function returns it to an observation akin to the one obtained by calling env.step
@@ -152,74 +177,11 @@ class DynamicsModel:
 
         if self.dynamics_mode == 'unicycle':
             obs = np.array([state[0], state[1], np.cos(state[2]), np.sin(state[2])])
-            return obs
-
-    def get_cbf_output_dynamics(self):
-        """Get affine CBFs for a given environment.
-
-        Parameters
-        ----------
-
-        Returns
-        -------
-        get_f : callable
-                Drift dynamics of the continuous system x' = f(x) + g(x)u
-        get_g : callable
-                Control dynamics of the continuous system x' = f(x) + g(x)u
-        """
-
-        dt = self.env.dt
-
-        if self.dynamics_mode == 'unicycle':  # output here is point look-ahead
-
-            L = np.array([[1, 0],
-                          [0, self.l_p]])
-            n_p = 2  # dimension of output p(x)
-
-            def get_f_out(state):
-                f_x = np.zeros(n_p)
-                return f_x
-
-            def get_g_out(state):
-                theta = state[2]
-                c_theta = np.cos(theta)
-                s_theta = np.sin(theta)
-                R = np.array([[c_theta, -s_theta],
-                              [s_theta, c_theta]])
-                g_x = R @ L
-                return g_x
-
-            return get_f_out, get_g_out
-
-    def get_output(self, state):
-
-        if self.dynamics_mode == 'unicycle':  # output here is point look-ahead
-            p_x = np.array([state[0] + self.l_p * np.cos(state[2]), state[1] + self.l_p * np.sin(state[2])])
+        elif self.dynamics_mode == 'unicycle_2':
+            obs = np.array([state[0], state[1], np.cos(state[2]), np.sin(state[2]), state[3], state[4]])
         else:
-            raise Exception('Environment not supported.')
-
-        return p_x
-
-    def get_output_disturbance_dynamics(self, states, f_means, f_stds):
-
-        if self.dynamics_mode == 'unicycle':
-            if len(states.shape) == 1:  # make it two dimensional to account for cases where we're trying to process more than one point
-                states = np.expand_dims(states, axis=0)
-                f_means = np.expand_dims(f_means, axis=0)
-                f_stds = np.expand_dims(f_stds, axis=0)
-            n_pts = f_means.shape[0]
-            # Mean
-            f_out_means = np.zeros((n_pts, 2))  # output is 2-dims (p_x, p_y)
-            f_out_means[:, 0] = f_means[:, 0] - self.l_p * np.sin(states[:, 2]) * f_means[:, 2]
-            f_out_means[:, 1] = f_means[:, 1] + self.l_p * np.cos(states[:, 2]) * f_means[:, 2]
-            # Sigma
-            f_out_stds = np.zeros((n_pts, 2))  # output is 2-dims (p_x, p_y)
-            f_out_stds[:, 0] = f_stds[:, 0] - self.l_p * np.sin(states[:, 2]) * f_stds[:, 2]
-            f_out_stds[:, 1] = f_stds[:, 1] + self.l_p * np.cos(states[:, 2]) * f_stds[:, 2]
-        else:
-            raise Exception('Dynamics mode not supported.')
-
-        return f_out_means.squeeze(), f_out_stds.squeeze()
+            raise Exception('Unknown dynamics')
+        return obs
 
     def append_transition(self, state, u, next_state):
         """Estimates the disturbance from the current dynamics transition and adds it to buffer.
@@ -236,6 +198,10 @@ class DynamicsModel:
         """
 
         disturbance = (next_state - state - self.env.dt * (self.get_f(state) + self.get_g(state) @ u)) / self.env.dt
+
+        # Apply any masks we want here (e.g. for high degrees CBFs, we only want disturbances on highest order terms)
+        if self.dynamics_mode == 'unicycle_2':
+            disturbance *= np.array([0.0, 0.0, 0.0, 1.0, 1.0])  # disturbance on only v and
 
         # Append new data point (state, disturbance) to our dataset
         self.disturbance_history['state'][self.history_counter % self.max_history_count] = state

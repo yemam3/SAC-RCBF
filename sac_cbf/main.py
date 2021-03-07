@@ -8,12 +8,11 @@ import torch
 from compensator import Compensator
 from pytorch_sac.sac import SAC
 from pytorch_sac.replay_memory import ReplayMemory
-from cbf import CBFLayer
+from cbf_cascade import CascadeCBFLayer
 from dynamics import DynamicsModel
 from build_env import *
 import os
 
-from unicycle_env import UnicycleEnv
 from util import prGreen, get_output_folder, prYellow
 from pathlib import Path
 from evaluator import Evaluator
@@ -34,9 +33,6 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
     # Data to train compensator
     compensator_rollouts = []
 
-    # Get output functions p(x) dynamics
-    get_f_out, get_g_out = dynamics_model.get_cbf_output_dynamics()  # get dynamics of output p(x) used by the CBF
-
     for i_episode in itertools.count(1):
         episode_reward = 0
         episode_cost = 0
@@ -55,9 +51,6 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
             state = dynamics_model.get_state(obs)
             disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
-            out = dynamics_model.get_output(state)
-            disturb_out_mean, disturb_out_std = dynamics_model.get_output_disturbance_dynamics(state, disturb_mean,
-                                                                                               disturb_std)
 
             if args.start_steps > total_numsteps:
                 action = env.action_space.sample()  # Sample random action
@@ -67,7 +60,7 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
             # Compensator Action (only starts after some warmup episodes)
             action_comp = compensator(obs) if i_episode > args.comp_train_episodes else 0
 
-            action_safe = cbf_wrapper.get_u_safe(action + action_comp, get_f_out(state) + disturb_out_mean, get_g_out(state), out, disturb_out_std)
+            action_safe = cbf_wrapper.get_u_safe(action + action_comp, state, disturb_mean, disturb_std)
 
             # Generate Model rollouts
             if args.model_based and len(memory) > 0:
@@ -170,19 +163,15 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
                 while not done:
                     state = dynamics_model.get_state(obs)
                     disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
-                    out = dynamics_model.get_output(state)
-                    disturb_out_mean, disturb_out_std = dynamics_model.get_output_disturbance_dynamics(state,
-                                                                                                       disturb_mean, disturb_std)
                     action = agent.select_action(obs, evaluate=True)
                     # Compensator Action (only starts after some warmup episodes)
                     action_comp = compensator(obs)
-                    action_safe = cbf_wrapper.get_u_safe(action + action_comp, get_f_out(state) + disturb_out_mean, get_g_out(state),
-                                                         out, disturb_out_std)
+                    action_safe = cbf_wrapper.get_u_safe(action + action_comp, state, disturb_mean, disturb_std)
                     next_obs, reward, done, info = env.step(action + action_comp + action_safe)
                     episode_reward += reward
                     episode_cost += info.get('cost', 0)
-
                     obs = next_obs
+
                 avg_reward += episode_reward
                 avg_cost += episode_cost
             avg_reward /= episodes
@@ -193,6 +182,7 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
             print("----------------------------------------")
             print("Test Episodes: {}, Avg. Reward: {}, Avg. Cost: {}".format(episodes, round(avg_reward, 2), round(avg_cost, 2)))
             print("----------------------------------------")
+
 
 def test(num_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, evaluate, model_path, visualize=True, debug=False):
 
@@ -205,9 +195,6 @@ def test(num_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, eva
     except:
         pass
 
-    # Get output functions p(x) dynamics
-    get_f_out, get_g_out = dynamics_model.get_cbf_output_dynamics()  # get dynamics of output p(x) used by the CBF
-
     def wrapped_policy(observation):
 
         action = agent.select_action(observation, evaluate=True)
@@ -216,12 +203,8 @@ def test(num_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, eva
         state = dynamics_model.get_state(observation)
         # Get disturbance on output
         disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
-        disturb_out_mean, disturb_out_std = dynamics_model.get_output_disturbance_dynamics(state,
-                                                                                           disturb_mean, disturb_std)
+        action_safe = cbf_wrapper.get_u_safe(action + action_comp, state, disturb_mean, disturb_std)
 
-        action_safe = cbf_wrapper.get_u_safe(action + action_comp, get_f_out(state) + disturb_out_mean,
-                                             get_g_out(state),
-                                             dynamics_model.get_output(state), disturb_out_std)
         # print('state = {}, action = {}, action_comp = {}, u_safe = {}'.format(state, action, action_comp, u_safe))
         return action + action_comp + action_safe
 
@@ -276,7 +259,6 @@ if __name__ == "__main__":
     parser.add_argument('--validate_episodes', default=20, type=int, help='how many episode to perform during validate experiment')
     parser.add_argument('--validate_steps', default=1000, type=int, help='how many steps to perform a validate experiment')
     # CBF, Dynamics, Env Args
-    parser.add_argument('--dynamics_mode', default='unicycle')
     parser.add_argument('--k_d', default=1.5, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
     parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
@@ -310,8 +292,7 @@ if __name__ == "__main__":
         experiment.log_parameters(vars(args))
 
     # Environment
-    # env = build_env(args)
-    env = UnicycleEnv(noisy=True)
+    env = build_env(args)
     if args.seed > 0:
         env.seed(args.seed)
         env.action_space.seed(args.seed)
@@ -320,7 +301,7 @@ if __name__ == "__main__":
 
     # Agent
     agent = SAC(env.observation_space.shape[0], env.action_space, args)
-    cbf_wrapper = CBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
+    cbf_wrapper = CascadeCBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
     dynamics_model = DynamicsModel(env, args)
     dynamics_model.seed(args.seed)
     compensator = Compensator(env.observation_space.shape[0], env.action_space.shape[0], env.action_space.low, env.action_space.high, args)
