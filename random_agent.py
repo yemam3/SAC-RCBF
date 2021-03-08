@@ -12,9 +12,9 @@ from cbf_cascade import CascadeCBFLayer
 def simple_controller(env, state, goal):
     goal_xy = goal[:2]
     goal_dist = -np.log(goal[2])  # the observation is np.exp(-goal_dist)
-    v = 0.4 * goal_dist
+    v = 0.02 * goal_dist
     relative_theta = 1.0*np.arctan2(goal_xy[1], goal_xy[0])
-    omega = relative_theta
+    omega = 0.1*relative_theta
 
     return np.clip(np.array([v, omega]), env.action_space.low, env.action_space.high)
 
@@ -51,7 +51,8 @@ def run_random(args):
 
         action = simple_controller(env, state, obs[-3:])  #TODO: observations last 3 indicated
         assert env.action_space.contains(action)
-        action_safe = cbf_wrapper.get_u_safe(action, state, disturb_mean, disturb_std)
+        # action_safe = cbf_wrapper.get_u_safe(action, state, disturb_mean, disturb_std)
+        action_safe = np.array([0.0, 0.0, 0.0])
 
         # Get confidence intervals
         next_state_pred, next_state_std = dynamics_model.predict_next_state(state, action + action_safe)

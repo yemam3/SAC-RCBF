@@ -141,7 +141,7 @@ class ObsWrapper(gym.Wrapper):
         v_mag = np.linalg.norm(obs['velocimeter'][:2])
         v = np.sign(obs['velocimeter'][0] * np.cos(theta)) * v_mag
         omega = obs['gyro'][2]
-        new_obs = np.append(robot_state, [obs['goal_compass'][0], obs['goal_compass'][1], v, omega, float(obs['goal_dist'])])
+        new_obs = np.append(robot_state, [v, omega, obs['goal_compass'][0], obs['goal_compass'][1], float(obs['goal_dist'])])
         return new_obs
 
     def reset(self):
