@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from dynamics import DYNAMICS_MODE
 from quadprog import solve_qp
-
+from util import prGreen, prYellow, prCyan
 
 class CascadeCBFLayer:
 
@@ -95,12 +95,17 @@ class CascadeCBFLayer:
 
         if self.env.dynamics_mode == 'unicycle_2':
 
+
             hazards_radius = self.env.hazards_radius
             hazards_locations = self.env.hazards_locations
-            collision_radius = hazards_radius + 0.07  # add a little buffer
+            collision_radius = hazards_radius + 0.10  # add a little buffer
+
+            # prCyan('state = {}, u_nom = {}, mean_pred = {}, sigma_pred = {}'.format(state, u_nom, mean_pred, sigma_pred))
+            # print('coll_rad = {}'.format(collision_radius))
+            # print('hazards_locations = \t{}'.format(hazards_locations))
 
             # γ_1 and γ_2
-            gamma_1 = 100
+            gamma_1 = 50
             gamma_2 = 100
 
             # Extract state
@@ -118,31 +123,40 @@ class CascadeCBFLayer:
                           [0, self.l_p]])
 
             p = state[:2] + self.l_p * R[:, 0].squeeze()
+            assert(p.shape == (2,))
             pd = R @ L @ state[-2:]  # RL[v ω]^T
             assert(np.all(np.dot(R @ L, state[-2:]) == pd))  # double check this
             assert(pd.shape == (2,))
+            # prGreen('p = {}, pd = {}'.format(p, pd))
 
             hs = 0.5 * (np.sum((p - hazards_locations)**2, axis=1) - collision_radius**2)  # 1/2 * (||p - p_obs||^2 - r^2)
+            # prGreen('hs = {}'.format(hs))
             dhdps = (p - hazards_locations)  # each row is dhdx_i for hazard i
+            # prGreen('dhdps = {}'.format(dhdps))
             Lfhs = dhdps @ pd
+            # prGreen('Lfhs = dhdps @ pd = {}'.format(Lfhs))
 
             # Gradient of Lfh wrt x = [p_x, p_y, θ, v, ω]
             dLfhdxs = np.zeros((len(hazards_locations), 5))
-            dLfhdxs[:, :2] = 2 * np.tile(pd, (len(hazards_locations), 1))  # dLfhdp
-            dLfhdxs[:,  2] = 2 * dhdps @ Rd @ L @ state[-2:]  # dLfhdθ
-            dLfhdxs[:,  3] = 2 * dhdps @ R[:, 0]  # dLfhdv
-            dLfhdxs[:,  4] = 2 * self.l_p * dhdps @ R[:, 1]  # dLfhdω
+            dLfhdxs[:, :2] = np.tile(pd, (len(hazards_locations), 1))  # dLfhdp
+            # prGreen('dLfhdxs = {}'.format(dLfhdxs))
+            dLfhdxs[:,  2] = dhdps @ Rd @ L @ state[-2:]  # dLfhdθ
+            dLfhdxs[:,  3] = dhdps @ R[:, 0]  # dLfhdv
+            dLfhdxs[:,  4] = self.l_p * dhdps @ R[:, 1]  # dLfhdω
+            # prGreen('dLfhdxs = {}'.format(dLfhdxs))
             # f_x
-            f_x = np.zeros((5,)) + mean_pred
+            f_x = np.zeros((5,)) + mean_pred * np.array([0., 0., 0., 1., 1.])
             f_x[:2] = R @ L @ state[-2:]
             f_x[2] = state[-1]
             # g_x
             g_x = np.zeros((5, 2))
             g_x[3, 0] = 29.0  # v_dot = u^v
-            g_x[4, 1] = 5000.0  # ω_dot = u^ω
+            g_x[4, 1] = 1000.0  # ω_dot = u^ω
+            # prGreen('f_x = {}, g_x = {}'.format(f_x, g_x))
 
             Lffhs = dLfhdxs @ f_x
             Lgfhs = dLfhdxs @ g_x
+            # prGreen('Lffhs = {}, Lgfhs = {}'.format(Lffhs, Lgfhs))
 
             n_u = u_nom.shape[0]  # dimension of control inputs
             num_constraints = len(hazards_locations) + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
@@ -156,12 +170,12 @@ class CascadeCBFLayer:
             # Constraint is of the following form Lffh + Lgfh*(u + u_nom) + (γ_1 + γ_2) Lfh + γ_2 h >= 0
             G[:len(hazards_locations), :n_u] = - Lgfhs
             G[:len(hazards_locations), n_u] = -1  # for slack
-            h[:len(hazards_locations)] = gamma_2 * hs + (gamma_1 + gamma_2) * Lfhs + Lffhs + Lgfhs @ u_nom
-            h[:len(hazards_locations)] += - self.k_d * np.abs(dLfhdxs) @ sigma_pred
+            h[:len(hazards_locations)] = gamma_1 * gamma_2 * hs + (gamma_1 + gamma_2) * Lfhs + Lffhs + Lgfhs @ u_nom
+            h[:len(hazards_locations)] += - self.k_d * np.abs(dLfhdxs) @ sigma_pred * np.array([0., 0., 0., 1., 1.])
             ineq_constraint_counter += len(hazards_locations)
 
             # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
-            P = np.diag([1.e1, 1.e-4, 1e6])  # in the original code, they use 1e24 instead of 1e7, but quadprog can't handle that...
+            P = np.diag([1.e0, 1.e-1, 1e6])  # in the original code, they use 1e24 instead of 1e7, but quadprog can't handle that...
             q = np.zeros(n_u + 1)
 
         elif self.env.dynamics_mode == 'unicycle':

@@ -126,7 +126,7 @@ class DynamicsModel:
 
                 g_x = np.zeros((5, 2))
                 g_x[3, 0] = 29.0  # v_dot = u^v
-                g_x[4, 1] = 5000.0  # ω_dot = u^ω
+                g_x[4, 1] = 1000.0  # ω_dot = u^ω
                 return g_x
 
 

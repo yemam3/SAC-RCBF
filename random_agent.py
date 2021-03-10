@@ -38,7 +38,7 @@ def run_random(args):
     model_prediction_uci_history = [[] for _ in range(dynamics_model.n_s)]
     model_prediction_std_history = [[] for _ in range(dynamics_model.n_s)]
 
-    for i_step in range(30000):
+    for i_step in range(3000):
 
         if done:
             print('Episode Return: %.3f \t Episode Cost: %.3f'%(ep_ret, ep_cost))
@@ -51,8 +51,8 @@ def run_random(args):
 
         action = simple_controller(env, state, obs[-3:])  #TODO: observations last 3 indicated
         assert env.action_space.contains(action)
-        # action_safe = cbf_wrapper.get_u_safe(action, state, disturb_mean, disturb_std)
-        action_safe = np.array([0.0, 0.0, 0.0])
+        action_safe = cbf_wrapper.get_u_safe(action, state, disturb_mean, disturb_std)
+        # action_safe = np.array([0.0, 0.0])
 
         # Get confidence intervals
         next_state_pred, next_state_std = dynamics_model.predict_next_state(state, action + action_safe)
@@ -118,7 +118,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--env-name', default="CustomSafeExp-PointGoal-v0",
                         help='Doesn''t really matter, just for saving purposes')
-    parser.add_argument('--k_d', default=1.5, type=float)
+    parser.add_argument('--k_d', default=3.0, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
     parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
     parser.add_argument('--l_p', default=0.03, type=float, help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
