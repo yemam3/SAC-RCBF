@@ -104,7 +104,7 @@ class ObsWrapper(gym.Wrapper):
         self.hazards_locations = hazards_locations
         self.hazards_radius = hazards_radius
         self._max_episode_steps = 1000
-        self.observation_space = gym.spaces.Box(low=-1e10, high=1e10, shape=(7,))
+        self.observation_space = gym.spaces.Box(low=-1e10, high=1e10, shape=(9,))
         self.env = env
         self.dynamics_mode = 'unicycle_2'  # for model-based RL + GPs
 

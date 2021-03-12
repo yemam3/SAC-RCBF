@@ -1,10 +1,11 @@
 import numpy as np
 import torch
 from gp_model import GPyDisturbanceEstimator
+from util import prCyan
 
 DYNAMICS_MODE = {'unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
                  'unicycle_2': {'n_s': 5, 'n_u': 2}}  # state = [x y θ v ω]
-MAX_STD = {'unicycle': [2e-1, 2e-1, 2e-1], 'unicycle_2': [0, 0, 0, 2e-1, 2e-1]}
+MAX_STD = {'unicycle': [2e-1, 2e-1, 2e-1], 'unicycle_2': [0, 0, 0, 50, 200.]}
 
 
 class DynamicsModel:
@@ -115,18 +116,18 @@ class DynamicsModel:
         elif self.dynamics_mode == 'unicycle_2':
 
             def get_f(state):
-                f_x = np.array([    state[3] * np.cos(state[2]),   # x_dot = v*cos(θ)
-                                    state[3] * np.sin(state[2]),   # y_dot = v*sin(θ)
-                                                       state[4],   # θ_dot = ω
-                                                              0,   # v_dot = u^v
-                                                              0])  # ω_dot = u^ω
+                f_x = np.array([ 9.*state[3] * np.cos(state[2]),   # x_dot = v*cos(θ)
+                                 9.*state[3] * np.sin(state[2]),   # y_dot = v*sin(θ)
+                                                   5.5*state[4],   # θ_dot = ω
+                                                  -20.*state[3],   # v_dot = u^v
+                                                 -500.*state[4]])  # ω_dot = u^ω - damp_coeff * ω
                 return f_x
 
             def get_g(state):
 
                 g_x = np.zeros((5, 2))
-                g_x[3, 0] = 29.0  # v_dot = u^v
-                g_x[4, 1] = 1000.0  # ω_dot = u^ω
+                g_x[3, 0] = 40.0  # v_dot = u^v
+                g_x[4, 1] = 1520.0  # ω_dot = u^ω - damp_coeff * ω
                 return g_x
 
 
@@ -234,9 +235,21 @@ class DynamicsModel:
             train_x = self.disturbance_history['state']
             train_y = self.disturbance_history['disturbance']
 
+        # prCyan('Fitting models:')
+        # prCyan('Mean disturb = {}'.format(np.mean(train_y, axis=0)))
+        # prCyan('Median disturb = {}'.format(np.median(train_y, axis=0)))
+        # prCyan('Meax disturb = {}'.format(np.max(train_y, axis=0)))
+
+        # Normalize Data
+        self.train_x_std = np.std(train_x, axis=0)
+        train_x_normalized = train_x / (self.train_x_std + 1e-8)
+        self.train_y_std = np.std(train_y, axis=0)
+        train_y_normalized = train_y / (self.train_y_std + 1e-8)
+
         self.disturb_estimators = []
         for i in range(self.n_s):
-            self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i]))
+            # self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i]))
+            self.disturb_estimators.append(GPyDisturbanceEstimator(train_x_normalized, train_y_normalized[:, i]))
             self.disturb_estimators[i].train(training_iter)
 
         # track the data I last used to fit the GPs for saving purposes (need it to initialize before loading weights)
@@ -265,10 +278,12 @@ class DynamicsModel:
         f_std = np.zeros(test_x.shape)  # standard deviation
 
         if self.disturb_estimators:
+            # Normalize
+            test_x = test_x / self.train_x_std
             for i in range(self.n_s):
                 prediction_ = self.disturb_estimators[i].predict(test_x)
-                means[:, i] = prediction_['mean']
-                f_std[:, i] = np.sqrt(prediction_['f_var'])
+                means[:, i] = prediction_['mean'] * (self.train_y_std[i] + 1e-8)
+                f_std[:, i] = np.sqrt(prediction_['f_var']) * (self.train_y_std[i] + 1e-8)
 
         else:  # zero-mean, max_sigma prior
             f_std = np.ones(test_x.shape)
