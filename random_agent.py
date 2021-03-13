@@ -39,7 +39,7 @@ def run_random(args):
     model_prediction_std_history = [[] for _ in range(dynamics_model.n_s)]
     action_history = [[] for _ in range(dynamics_model.n_u)]
 
-    for i_step in range(100000):
+    for i_step in range(3000):
 
         if done:
             print('Episode Return: %.3f \t Episode Cost: %.3f'%(ep_ret, ep_cost))
@@ -203,8 +203,7 @@ def run_random(args):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env-name', default="CustomSafeExp-PointGoal-v0",
-                        help='Doesn''t really matter, just for saving purposes')
+    parser.add_argument('--env-name', default="SafetyGym", help='Either SafetyGym or Unicycle.')
     parser.add_argument('--k_d', default=3.0, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
     parser.add_argument('--robot_xml', default='xmls/point.xml', help="SafetyGym Currently only supporting xmls/point.xml.")

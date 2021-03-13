@@ -1,11 +1,6 @@
 import numpy as np
-import argparse
-import gym
-import matplotlib.pyplot as plt
-from tqdm import tqdm
 from dynamics import DYNAMICS_MODE
 from quadprog import solve_qp
-from util import prGreen, prYellow, prCyan
 
 class CascadeCBFLayer:
 
@@ -66,7 +61,7 @@ class CascadeCBFLayer:
         Each control barrier certificate is of the form:
             dh/dx^T (f_out + g_out u) >= -gamma^b h_out^3 where out here is an output of the state.
 
-        In the case of 2nd order unicycle dynamics:
+        In the case of SafetyGym_point dynamics:
         state = [x y θ v ω]
         state_d = [v*cos(θ) v*sin(θ) omega ω u^v u^ω]
 
@@ -93,7 +88,7 @@ class CascadeCBFLayer:
             Inequality constraint vector (G[u,eps] <= h) of size (num_constraints,)
         """
 
-        if self.env.dynamics_mode == 'unicycle_2':
+        if self.env.dynamics_mode == 'SafetyGym_point':
 
 
             hazards_radius = self.env.hazards_radius
@@ -109,6 +104,7 @@ class CascadeCBFLayer:
             v = state[3]
             omega = state[4]
 
+            # Transformations needed for point-lookahead output p
             c_theta = np.cos(theta)
             s_theta = np.sin(theta)
             R = np.array([[c_theta, -s_theta],
@@ -117,10 +113,10 @@ class CascadeCBFLayer:
                           [c_theta, -s_theta]])
             L = np.array([[1, 0],
                           [0, self.l_p]])
-
             p = state[:2] + self.l_p * R[:, 0].squeeze()
             pd = R @ L @ (np.array([9., 5.5]) * state[-2:])  # RL[v ω]^T
 
+            # The Barrier function h
             hs = 0.5 * (np.sum((p - hazards_locations)**2, axis=1) - collision_radius**2)  # 1/2 * (||p - p_obs||^2 - r^2)
             dhdps = (p - hazards_locations)  # each row is dhdx_i for hazard i
             Lfhs = dhdps @ pd
@@ -128,26 +124,22 @@ class CascadeCBFLayer:
             # Gradient of Lfh wrt x = [p_x, p_y, θ, v, ω]
             dLfhdxs = np.zeros((len(hazards_locations), 5))
             dLfhdxs[:, :2] = np.tile(pd, (len(hazards_locations), 1))  # dLfhdp
-            # prGreen('dLfhdxs = {}'.format(dLfhdxs))
             dLfhdxs[:,  2] = dhdps @ Rd @ L @ (np.array([9., 5.5]) * state[-2:])  # dLfhdθ
             dLfhdxs[:,  3] = dhdps @ R[:, 0]  # dLfhdv
             dLfhdxs[:,  4] = self.l_p * dhdps @ R[:, 1]  # dLfhdω
-            # prGreen('dLfhdxs = {}'.format(dLfhdxs))
             # f_x
             f_x = np.zeros((5,)) + mean_pred * np.array([0., 0., 0., 1., 1.])
-            f_x[4] = -500. * state[4]  # damping term on ω
-            f_x[3] = -20. * state[3]
             f_x[:2] = R @ L @ (np.array([9., 5.5]) * state[-2:])
             f_x[2] = 5.5 * state[-1]
+            f_x[3] = -20. * state[3]
+            f_x[4] = -500. * state[4]  # damping term on ω
             # g_x
             g_x = np.zeros((5, 2))
             g_x[3, 0] = 40.0  # v_dot = u^v
             g_x[4, 1] = 1520.0  # ω_dot = u^ω
-            # prGreen('f_x = {}, g_x = {}'.format(f_x, g_x))
 
             Lffhs = dLfhdxs @ f_x
             Lgfhs = dLfhdxs @ g_x
-            # prGreen('Lffhs = {}, Lgfhs = {}'.format(Lffhs, Lgfhs))
 
             n_u = u_nom.shape[0]  # dimension of control inputs
             num_constraints = len(hazards_locations) + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
@@ -169,7 +161,7 @@ class CascadeCBFLayer:
             P = np.diag([1.e0, 1.e-2, 1e5])  # in the original code, they use 1e24 instead of 1e7, but quadprog can't handle that...
             q = np.zeros(n_u + 1)
 
-        elif self.env.dynamics_mode == 'unicycle':
+        elif self.env.dynamics_mode == 'Unicycle':
 
             collision_radius = self.env.hazards_radius + 0.07  # add a little buffer
 
@@ -306,13 +298,13 @@ class CascadeCBFLayer:
 
         def get_h(state):
             # p(x): lookahead output
-            if 'unicycle' in self.env.dynamics_mode:
+            if self.env.dynamics_mode in ('SafetyGym_point', 'Unicycle'):
                 state = np.array([state[0] + self.l_p * np.cos(state[2]), state[1] + self.l_p * np.sin(state[2])])
             return 0.5 * (np.sum((state - hazards_locations)**2, axis=1) - collision_radius**2)  # 1/2 * (||x - x_obs||^2 - r^2)
 
         def get_dhdx(state):
             # p(x): lookahead output
-            if 'unicycle' in self.env.dynamics_mode:
+            if self.env.dynamics_mode in ('SafetyGym_point', 'Unicycle'):
                 state = np.array([state[0] + self.l_p * np.cos(state[2]), state[1] + self.l_p * np.sin(state[2])])
             dhdx = (state - hazards_locations)  # each row is dhdx_i for hazard i
             return dhdx

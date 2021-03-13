@@ -2,9 +2,15 @@ import numpy as np
 import torch
 from gp_model import GPyDisturbanceEstimator
 
-DYNAMICS_MODE = {'unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
-                 'unicycle_2': {'n_s': 5, 'n_u': 2}}  # state = [x y θ v ω]
-MAX_STD = {'unicycle': [2e-1, 2e-1, 2e-1], 'unicycle_2': [0, 0, 0, 50, 200.]}
+"""
+This file contains the DynamicsModel class. In short, depending on the environment selected, it contains the dynamics
+priors and learns the remaining disturbance term using GPs. 
+"""
+
+
+DYNAMICS_MODE = {'Unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
+                 'SafetyGym_point': {'n_s': 5, 'n_u': 2}}  # state = [x y θ v ω]
+MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SafetyGym_point': [0, 0, 0, 50, 200.]}
 
 
 class DynamicsModel:
@@ -19,11 +25,10 @@ class DynamicsModel:
         """
 
         self.env = env
-        self.dynamics_mode = env.dynamics_mode
         # Get Dynamics
         self.get_f, self.get_g = self.get_dynamics()
-        self.n_s = DYNAMICS_MODE[self.dynamics_mode]['n_s']
-        self.n_u = DYNAMICS_MODE[self.dynamics_mode]['n_u']
+        self.n_s = DYNAMICS_MODE[self.env.dynamics_mode]['n_s']
+        self.n_u = DYNAMICS_MODE[self.env.dynamics_mode]['n_u']
 
         # Keep Disturbance History to estimate it using GPs
         self.disturb_estimators = None
@@ -99,7 +104,7 @@ class DynamicsModel:
                 Control dynamics of the continuous system x' = f(x) + g(x)u
         """
 
-        if self.dynamics_mode == 'unicycle':
+        if self.env.dynamics_mode == 'Unicycle':
 
             def get_f(state):
                 f_x = np.zeros(state.shape)
@@ -112,20 +117,20 @@ class DynamicsModel:
                                 [            0, 1.0]])
                 return g_x
 
-        elif self.dynamics_mode == 'unicycle_2':
+        elif self.env.dynamics_mode == 'SafetyGym_point':
 
             def get_f(state):
                 f_x = np.array([ 9.*state[3] * np.cos(state[2]),   # x_dot = v*cos(θ)
                                  9.*state[3] * np.sin(state[2]),   # y_dot = v*sin(θ)
                                                    5.5*state[4],   # θ_dot = ω
-                                                  -20.*state[3],   # v_dot = u^v
+                                                  -20.*state[3],   # v_dot = u^ - damp_coeff * v
                                                  -500.*state[4]])  # ω_dot = u^ω - damp_coeff * ω
                 return f_x
 
             def get_g(state):
 
                 g_x = np.zeros((5, 2))
-                g_x[3, 0] = 40.0  # v_dot = u^v
+                g_x[3, 0] = 40.0  # v_dot = u^v - damp_coeff * ω
                 g_x[4, 1] = 1520.0  # ω_dot = u^ω - damp_coeff * ω
                 return g_x
 
@@ -150,10 +155,10 @@ class DynamicsModel:
 
         """
 
-        if self.dynamics_mode == 'unicycle':
+        if self.env.dynamics_mode == 'Unicycle':
             theta = np.arctan2(obs[3], obs[2])
             state = np.array([obs[0], obs[1], theta])
-        elif self.dynamics_mode == 'unicycle_2':
+        elif self.env.dynamics_mode == 'SafetyGym_point':
             theta = np.arctan2(obs[3], obs[2])
             state = np.array([obs[0], obs[1], theta, obs[4], obs[5]])
         else:
@@ -175,9 +180,9 @@ class DynamicsModel:
 
         """
 
-        if self.dynamics_mode == 'unicycle':
+        if self.env.dynamics_mode == 'Unicycle':
             obs = np.array([state[0], state[1], np.cos(state[2]), np.sin(state[2])])
-        elif self.dynamics_mode == 'unicycle_2':
+        elif self.env.dynamics_mode == 'SafetyGym_point':
             obs = np.array([state[0], state[1], np.cos(state[2]), np.sin(state[2]), state[3], state[4]])
         else:
             raise Exception('Unknown dynamics')
@@ -198,10 +203,6 @@ class DynamicsModel:
         """
 
         disturbance = (next_state - state - self.env.dt * (self.get_f(state) + self.get_g(state) @ u)) / self.env.dt
-
-        # Apply any masks we want here (e.g. for high degrees CBFs, we only want disturbances on highest order terms)
-        if self.dynamics_mode == 'unicycle_2':
-            disturbance *= np.array([0.0, 0.0, 0.0, 1.0, 1.0])  # disturbance on only v and
 
         # Append new data point (state, disturbance) to our dataset
         self.disturbance_history['state'][self.history_counter % self.max_history_count] = state
@@ -234,16 +235,11 @@ class DynamicsModel:
             train_x = self.disturbance_history['state']
             train_y = self.disturbance_history['disturbance']
 
-        # prCyan('Fitting models:')
-        # prCyan('Mean disturb = {}'.format(np.mean(train_y, axis=0)))
-        # prCyan('Median disturb = {}'.format(np.median(train_y, axis=0)))
-        # prCyan('Meax disturb = {}'.format(np.max(train_y, axis=0)))
-
         # Normalize Data
-        self.train_x_std = np.std(train_x, axis=0)
-        train_x_normalized = train_x / (self.train_x_std + 1e-8)
-        self.train_y_std = np.std(train_y, axis=0)
-        train_y_normalized = train_y / (self.train_y_std + 1e-8)
+        train_x_std = np.std(train_x, axis=0)
+        train_x_normalized = train_x / (train_x_std + 1e-8)
+        train_y_std = np.std(train_y, axis=0)
+        train_y_normalized = train_y / (train_y_std + 1e-8)
 
         self.disturb_estimators = []
         for i in range(self.n_s):
@@ -256,7 +252,7 @@ class DynamicsModel:
         self.train_y = train_y
 
     def predict_disturbance(self, test_x):
-        """
+        """Predict the disturbance at the queried states using the GP models.
 
         Parameters
         ----------
@@ -278,16 +274,18 @@ class DynamicsModel:
 
         if self.disturb_estimators:
             # Normalize
-            test_x = test_x / self.train_x_std
+            train_x_std = np.std(self.train_x, axis=0)
+            train_y_std = np.std(self.train_y, axis=0)
+            test_x = test_x / train_x_std
             for i in range(self.n_s):
                 prediction_ = self.disturb_estimators[i].predict(test_x)
-                means[:, i] = prediction_['mean'] * (self.train_y_std[i] + 1e-8)
-                f_std[:, i] = np.sqrt(prediction_['f_var']) * (self.train_y_std[i] + 1e-8)
+                means[:, i] = prediction_['mean'] * (train_y_std[i] + 1e-8)
+                f_std[:, i] = np.sqrt(prediction_['f_var']) * (train_y_std[i] + 1e-8)
 
         else:  # zero-mean, max_sigma prior
             f_std = np.ones(test_x.shape)
             for i in range(self.n_s):
-                f_std[:, i] *= MAX_STD[self.dynamics_mode][i]
+                f_std[:, i] *= MAX_STD[self.env.dynamics_mode][i]
 
         return means.squeeze(), f_std.squeeze()
 

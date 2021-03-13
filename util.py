@@ -153,7 +153,6 @@ def get_wrapped_policy(agent, cbf_wrapper, dynamics_model, compensator=None, war
         else:
             action_comp = 0
         state = dynamics_model.get_state(observation)
-        # Get disturbance on output
         disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
         action_safe = cbf_wrapper.get_u_safe(action + action_comp, state, disturb_mean, disturb_std)
         # print('state = {}, action = {}, action_comp = {}, u_safe = {}'.format(state, action, action_comp, u_safe))

@@ -5,6 +5,9 @@ from util import mat_to_euler_2d
 from gym import spaces
 
 """
+This file builds the desired environment. For SafetyGym, it builds an env using the engine and uses a wrapper to alter 
+the observation. A simple Unicycle environment is also included.
+
 More info can be obtained here: 
 https://github.com/openai/safety-gym/blob/master/safety_gym/envs/engine.py
 """
@@ -12,56 +15,80 @@ https://github.com/openai/safety-gym/blob/master/safety_gym/envs/engine.py
 
 DT = 0.002  # timestep
 
-
 def build_env(args, random_hazards=False):
     """Build our own env using the Engine."""
 
-    if args.env_name == 'unicycle':
+    if args.env_name == 'Unicycle':
         return UnicycleEnv(noisy=True)
 
-    # Hazards (danger areas)
-    hazard_radius = 0.6
-    if random_hazards:
-        hazards_locations = get_random_hazard_locations(n_hazards=8, hazard_radius=hazard_radius)
+    elif args.env_name == 'SafetyGym':
+        # Hazards (danger areas)
+        hazard_radius = 0.6
+        if random_hazards:
+            hazards_locations = get_random_hazard_locations(n_hazards=8, hazard_radius=hazard_radius)
+        else:
+            hazards_locations = np.array([[0., 0.], [-1., 1.], [-1., -1.], [1., -1.], [1., 1.]]) * 1.5
+
+        config = {
+            'num_steps': 1000,  # Maximum number of environment steps in an episode
+            'robot_base': args.robot_xml,
+            'task': 'goal',
+            'observe_com': True,  # observe center of mass of robot xyz
+            'observe_qpos': False,
+            'observe_qvel': False,
+            'observe_goal_comp': True,  # observe goal_compass
+            'observe_goal_dist': True,  # observe
+            'hazards_num': len(hazards_locations),
+            'hazards_locations': hazards_locations,
+            'hazards_size': hazard_radius,
+            'sensors_obs': ['velocimeter', 'gyro'],  # ['gyro', 'magnetometer', 'accelerometer'],
+            'observe_sensors': True,  # whether measurements from `sensors_obs` should be in the observation
+            'observe_goal_lidar': False,  # if goals should be observed by LIDAR
+            'observe_box_lidar': False,  # if boxes should be observed by LIDAR
+            'observe_hazards': False,  # Observe the vector from agent to hazards (LIDAR like)
+            'observe_vases': False,  # Observe the vector from agent to vases (LIDAR like)
+            'constrain_hazards': True,
+            'lidar_max_dist': 3,
+            'lidar_num_bins': 16,
+            'vases_num': 0,
+            'build_resample': False,
+            'observation_flatten': False,
+            'robot_locations': [[-2.5, -2.5]],
+            'goal_locations': [[2.5, 2.5]],  # Fixed locations to override placements
+        }
+
+        env = ObsWrapper(Engine(config), hazards_locations, hazard_radius)
+        # For model-based RL + GPs
+        if args.robot_xml == 'xmls/point.xml':
+            env.dynamics_mode = 'SafetyGym_point'
+        else:
+            raise Exception('Currently, only xmls/point.xml is supported for SafetyGym. Got {} instead.'.format(args.robot_xml))
     else:
-        hazards_locations = np.array([[0., 0.], [-1., 1.], [-1., -1.], [1., -1.], [1., 1.]]) * 1.5
-
-    config = {
-        'num_steps': 1000,  # Maximum number of environment steps in an episode
-        'robot_base': args.robot_xml,
-        'task': 'goal',
-        'observe_com': True,  # observe center of mass of robot xyz
-        'observe_qpos': False,
-        'observe_qvel': False,
-        'observe_goal_comp': True,  # observe goal_compass
-        'observe_goal_dist': True,  # observe
-        'hazards_num': len(hazards_locations),
-        'hazards_locations': hazards_locations,
-        'hazards_size': hazard_radius,
-        'sensors_obs': ['velocimeter', 'gyro'],  # ['gyro', 'magnetometer', 'accelerometer'],
-        'observe_sensors': True,  # whether measurements from `sensors_obs` should be in the observation
-        'observe_goal_lidar': False,  # if goals should be observed by LIDAR
-        'observe_box_lidar': False,  # if boxes should be observed by LIDAR
-        'observe_hazards': False,  # Observe the vector from agent to hazards (LIDAR like)
-        'observe_vases': False,  # Observe the vector from agent to vases (LIDAR like)
-        'constrain_hazards': True,
-        'lidar_max_dist': 3,
-        'lidar_num_bins': 16,
-        'vases_num': 0,
-        'build_resample': False,
-        'observation_flatten': False,
-        'robot_locations': [[-2.5, -2.5]],
-        'goal_locations': [[2.5, 2.5]],  # Fixed locations to override placements
-    }
-
-    env = ObsWrapper(Engine(config), hazards_locations, hazard_radius)
+        raise Exception('Env {} not supported!'.format(args.env_name))
 
     return env
 
 
-def get_random_hazard_locations(n_hazards, hazard_radius):
+def get_random_hazard_locations(n_hazards, hazard_radius, bds=None):
+    """
 
-    bds = np.array([[-3., -3.], [3., 3.]])
+    Parameters
+    ----------
+    n_hazards : int
+        Number of hazards to create
+    hazard_radius : float
+        Radius of hazards
+    bds : list, optional
+        List of the form [[x_lb, x_ub], [y_lb, y_ub] denoting the bounds of the 2D arena
+
+    Returns
+    -------
+    hazards_locs : ndarray
+        Numpy array of shape (n_hazards, 2) containing xy locations of hazards.
+    """
+
+    if bds is None:
+        bds = np.array([[-3., -3.], [3., 3.]])
 
     # Create buffer with boundaries
     buffered_bds = bds
@@ -85,6 +112,7 @@ def get_random_hazard_locations(n_hazards, hazard_radius):
 
 
 class ObsWrapper(gym.Wrapper):
+    """Wrapper for Safety Gym Environment mainly to tweak the observation since CBFs require knowledge of the state."""
 
     def __init__(self, env, hazards_locations, hazards_radius):
         """
@@ -107,7 +135,6 @@ class ObsWrapper(gym.Wrapper):
         self._max_episode_steps = 1000
         self.observation_space = gym.spaces.Box(low=-1e10, high=1e10, shape=(9,))
         self.env = env
-        self.dynamics_mode = 'unicycle_2'  # for model-based RL + GPs
 
     def step(self, action):
         """Organize the observation to understand what's going on
@@ -126,14 +153,23 @@ class ObsWrapper(gym.Wrapper):
         obs, reward, done, info = self.env.step(action)
         new_obs = self.observation(obs)
 
-        # Include constraint cost in reward
-        # pos = self.env.world.robot_pos()
-        # if np.any(np.sum((pos[:2] - self.hazards_locations)**2, axis=1) < self.hazards_radius**2):
-        #     reward += -0.2
-
         return new_obs, reward, done, info
 
     def observation(self, obs):
+        """Function to alter the observation originally obtained from SafetyGym.
+
+        Parameters
+        ----------
+        obs : ndarray
+            Original observation obtained from SafetyGym.
+
+        Returns
+        -------
+        new_obs : ndarray
+            Altered observation. The new obs is:
+            For point robot : [x y cos(θ) sin(θ) v ω goal_comp_x goal_comp_y goal_dist]
+        """
+
         # Re-organize observation
         R = self.env.data.get_body_xmat('robot')[:2, :2]
         theta = mat_to_euler_2d(R)
@@ -152,7 +188,7 @@ class ObsWrapper(gym.Wrapper):
 
 
 class UnicycleEnv(gym.Env):
-    """Custom Environment that follows gym interface"""
+    """Custom Environment that follows SafetyGym interface"""
 
     metadata = {'render.modes': ['human']}
 
@@ -160,7 +196,7 @@ class UnicycleEnv(gym.Env):
 
         super(UnicycleEnv, self).__init__()
 
-        self.dynamics_mode = 'unicycle'
+        self.dynamics_mode = 'Unicycle'
         # Define action and observation space
         # They must be gym.spaces objects
         # Example when using discrete actions:

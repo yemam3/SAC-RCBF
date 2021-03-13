@@ -216,11 +216,13 @@ def test(num_episodes, agent, compensator, cbf_wrapper, env, dynamics_model, eva
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
+    # Environment Args
+    parser.add_argument('--env-name', default="SafetyGym", help='Options are Unicycle or SafetyGym')
+    parser.add_argument('--robot_xml', default='xmls/point.xml', help="SafetyGym Currently only supporting xmls/point.xml")
+    # SAC Args
     parser.add_argument('--mode', default='train', type=str, help='support option: train/test')
     parser.add_argument('--visualize', action='store_true', dest='visualize', help='visualize env -only in available test mode')
     parser.add_argument('--output', default='output', type=str, help='')
-    parser.add_argument('--env-name', default="CustomSafeExp-PointGoal-v0",
-                        help='Doesn''t really matter, just for saving purposes')
     parser.add_argument('--policy', default="Gaussian",
                         help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
     parser.add_argument('--eval', type=bool, default=True,
@@ -260,7 +262,6 @@ if __name__ == "__main__":
     # CBF, Dynamics, Env Args
     parser.add_argument('--k_d', default=3.0, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
-    parser.add_argument('--robot_xml', default='xmls/point.xml', help="SafetyGym Currently only supporting xmls/point.xml.")
     parser.add_argument('--l_p', default=0.03, type=float,
                         help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
     # Compensator

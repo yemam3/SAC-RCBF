@@ -117,6 +117,9 @@ class GPyDisturbanceEstimator:
 
 
 if __name__ == '__main__':
+    """
+    Simple code to test the GP model on a simple dataset. 
+    """
 
     # this is for running the notebook in our testing framework
     import os
@@ -133,7 +136,7 @@ if __name__ == '__main__':
     disturb_estimator = GPyDisturbanceEstimator(train_x, train_y)
     disturb_estimator.train(training_iter)
 
-    print('Now testing model!!')
+    print('Testing model...')
     test_x = torch.linspace(0, 1, 51)
     prediction = disturb_estimator.predict(test_x)
     train_x = train_x.cpu()
