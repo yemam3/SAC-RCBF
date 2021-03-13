@@ -140,8 +140,6 @@ def get_output_folder(parent_dir, env_name):
 
 def get_wrapped_policy(agent, cbf_wrapper, dynamics_model, compensator=None, warmup=False, action_space=None,
                        policy_eval=False):
-    # Get output functions p(x) dynamics
-    get_f_out, get_g_out = dynamics_model.get_cbf_output_dynamics()  # get dynamics of output p(x) used by the CBF
 
     def wrapped_policy(observation):
 
@@ -157,12 +155,7 @@ def get_wrapped_policy(agent, cbf_wrapper, dynamics_model, compensator=None, war
         state = dynamics_model.get_state(observation)
         # Get disturbance on output
         disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
-        disturb_out_mean, disturb_out_std = dynamics_model.get_output_disturbance_dynamics(state,
-                                                                                           disturb_mean, disturb_std)
-
-        action_safe = cbf_wrapper.get_u_safe(action + action_comp, get_f_out(state) + disturb_out_mean,
-                                             get_g_out(state),
-                                             dynamics_model.get_output(state), disturb_out_std)
+        action_safe = cbf_wrapper.get_u_safe(action + action_comp, state, disturb_mean, disturb_std)
         # print('state = {}, action = {}, action_comp = {}, u_safe = {}'.format(state, action, action_comp, u_safe))
         return action + action_comp + action_safe
 

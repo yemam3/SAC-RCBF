@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 from gp_model import GPyDisturbanceEstimator
-from util import prCyan
 
 DYNAMICS_MODE = {'unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
                  'unicycle_2': {'n_s': 5, 'n_u': 2}}  # state = [x y θ v ω]

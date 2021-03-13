@@ -29,7 +29,6 @@ def build_env(args, random_hazards=False):
     config = {
         'num_steps': 1000,  # Maximum number of environment steps in an episode
         'robot_base': args.robot_xml,
-        #'robot_locations': robot_locations,
         'task': 'goal',
         'observe_com': True,  # observe center of mass of robot xyz
         'observe_qpos': False,
@@ -50,7 +49,9 @@ def build_env(args, random_hazards=False):
         'lidar_num_bins': 16,
         'vases_num': 0,
         'build_resample': False,
-        'observation_flatten': False
+        'observation_flatten': False,
+        'robot_locations': [[-2.5, -2.5]],
+        'goal_locations': [[2.5, 2.5]],  # Fixed locations to override placements
     }
 
     env = ObsWrapper(Engine(config), hazards_locations, hazard_radius)

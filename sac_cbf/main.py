@@ -14,7 +14,6 @@ from build_env import *
 import os
 
 from util import prGreen, get_output_folder, prYellow
-from pathlib import Path
 from evaluator import Evaluator
 from generate_rollouts import generate_model_rollouts
 
@@ -261,7 +260,7 @@ if __name__ == "__main__":
     # CBF, Dynamics, Env Args
     parser.add_argument('--k_d', default=3.0, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
-    parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
+    parser.add_argument('--robot_xml', default='xmls/point.xml', help="SafetyGym Currently only supporting xmls/point.xml.")
     parser.add_argument('--l_p', default=0.03, type=float,
                         help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
     # Compensator
@@ -275,7 +274,6 @@ if __name__ == "__main__":
     parser.add_argument('--rollout_batch_size', default=5, type=int, help='Size of initial states batch to rollout from.')
     args = parser.parse_args()
 
-    args.robot_xml = str(Path(os.getcwd()).parent) + args.robot_xml
     args.output = get_output_folder(args.output, args.env_name)
     if args.resume == 'default':
         args.resume = os.getcwd() + '/output/{}-run0'.format(args.env_name)
@@ -294,18 +292,20 @@ if __name__ == "__main__":
 
     # Environment
     env = build_env(args)
-    if args.seed > 0:
-        env.seed(args.seed)
-        env.action_space.seed(args.seed)
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
 
     # Agent
     agent = SAC(env.observation_space.shape[0], env.action_space, args)
     cbf_wrapper = CascadeCBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
     dynamics_model = DynamicsModel(env, args)
-    dynamics_model.seed(args.seed)
     compensator = Compensator(env.observation_space.shape[0], env.action_space.shape[0], env.action_space.low, env.action_space.high, args)
+
+    # Random Seed
+    if args.seed > 0:
+        env.seed(args.seed)
+        env.action_space.seed(args.seed)
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        dynamics_model.seed(args.seed)
 
     evaluate = Evaluator(args.validate_episodes, args.validate_steps, args.output)
 
@@ -313,7 +313,6 @@ if __name__ == "__main__":
     if args.model_based:
         args.start_steps /= (1 + args.rollout_batch_size)
 
-    # Train
     if args.mode == 'train':
         train(agent, cbf_wrapper, env, dynamics_model, args, experiment)
     elif args.mode == 'test':

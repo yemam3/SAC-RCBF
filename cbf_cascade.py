@@ -100,10 +100,6 @@ class CascadeCBFLayer:
             hazards_locations = self.env.hazards_locations
             collision_radius = hazards_radius + 0.15  # add a little buffer
 
-            # prCyan('state = {}, u_nom = {}, mean_pred = {}, sigma_pred = {}'.format(state, u_nom, mean_pred, sigma_pred))
-            # print('coll_rad = {}'.format(collision_radius))
-            # print('hazards_locations = \t{}'.format(hazards_locations))
-
             # γ_1 and γ_2
             gamma_1 = 60.
             gamma_2 = 60.
@@ -124,14 +120,10 @@ class CascadeCBFLayer:
 
             p = state[:2] + self.l_p * R[:, 0].squeeze()
             pd = R @ L @ (np.array([9., 5.5]) * state[-2:])  # RL[v ω]^T
-            # prGreen('p = {}, pd = {}'.format(p, pd))
 
             hs = 0.5 * (np.sum((p - hazards_locations)**2, axis=1) - collision_radius**2)  # 1/2 * (||p - p_obs||^2 - r^2)
-            # prGreen('hs = {}'.format(hs))
             dhdps = (p - hazards_locations)  # each row is dhdx_i for hazard i
-            # prGreen('dhdps = {}'.format(dhdps))
             Lfhs = dhdps @ pd
-            # prGreen('Lfhs = dhdps @ pd = {}'.format(Lfhs))
 
             # Gradient of Lfh wrt x = [p_x, p_y, θ, v, ω]
             dLfhdxs = np.zeros((len(hazards_locations), 5))

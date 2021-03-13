@@ -207,11 +207,9 @@ if __name__ == '__main__':
                         help='Doesn''t really matter, just for saving purposes')
     parser.add_argument('--k_d', default=3.0, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
-    parser.add_argument('--robot_xml', default='/xmls/unicycle_point.xml')
+    parser.add_argument('--robot_xml', default='xmls/point.xml', help="SafetyGym Currently only supporting xmls/point.xml.")
     parser.add_argument('--l_p', default=0.03, type=float, help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
     args = parser.parse_args()
-
-    args.robot_xml = os.getcwd() + args.robot_xml
 
     run_random(args)
 
