@@ -136,7 +136,6 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
         if not args.no_comp and i_episode < args.comp_train_episodes:
             compensator_rollouts.append(episode_rollout)
             compensator.train(compensator_rollouts)
-            # compensator_rollouts = []
 
         if total_numsteps > args.num_steps:
             break

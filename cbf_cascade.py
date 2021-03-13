@@ -96,8 +96,8 @@ class CascadeCBFLayer:
             collision_radius = hazards_radius + 0.15  # add a little buffer
 
             # γ_1 and γ_2
-            gamma_1 = 60.
-            gamma_2 = 60.
+            gamma_1 = self.gamma_b
+            gamma_2 = self.gamma_b
 
             # Extract state
             theta = state[2]
