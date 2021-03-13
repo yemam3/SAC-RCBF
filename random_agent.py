@@ -67,8 +67,8 @@ def run_random(args):
 
         # Update state and store transition for GP model learning
         next_state = dynamics_model.get_state(observation2)
-        # if ep_step % 2 == 0:
-        #     dynamics_model.append_transition(state, action + action_safe, next_state)
+        if ep_step % 2 == 0:
+            dynamics_model.append_transition(state, action + action_safe, next_state)
 
         # test case focus here is on GPs
         for i in range(dynamics_model.n_s):
