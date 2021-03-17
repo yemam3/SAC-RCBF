@@ -14,7 +14,7 @@ def generate_model_rollouts(env, memory_model, memory, agent, cbf_wrapper, dynam
     # TODO: Speed this up
     for i, init_obs in enumerate(obs_batch):
 
-        done = not mask_batch[i]
+        done = False
         obs = init_obs
 
         # # TODO: Delete only for debugging
@@ -34,9 +34,8 @@ def generate_model_rollouts(env, memory_model, memory, agent, cbf_wrapper, dynam
         for k in range(k_horizon):
 
             if done:
-                if done:
-                    print('reward for done step = {}'.format(reward_batch[i]))
-                memory_model.push(obs_batch[i], action_batch[i], reward_batch[i], next_obs_batch[i], mask_batch[i])  # Append transition to memory
+                print('reward for done step = {}'.format(reward_batch[i]))
+                # memory_model.push(obs_batch[i], action_batch[i], reward_batch[i], next_obs_batch[i], mask_batch[i])  # Append transition to memory
                 break
 
             wrapped_action = wrapped_policy(obs)
@@ -56,7 +55,7 @@ def generate_model_rollouts(env, memory_model, memory, agent, cbf_wrapper, dynam
             next_obs = np.hstack((next_obs, compass, np.exp(-dist2goal)))
 
             # TODO: what is the reward function? What is the mask?
-            mask = True  # never assume terminal
+            done = False  # never assume terminal
 
             # TODO: Specify those in build_env.py and pass env to this function
             # reward = (self.last_dist_goal - dist_goal) * self.reward_distance
@@ -65,6 +64,12 @@ def generate_model_rollouts(env, memory_model, memory, agent, cbf_wrapper, dynam
             reward_goal = 1.0
             reward_distance = 1.0
             reward = (dist2goal_prev - dist2goal) * reward_distance + (dist2goal <= goal_size) * reward_goal
+
+            if dist2goal <= goal_size:
+                reward += reward_goal
+                done = True
+
+            mask = not done
 
             memory_model.push(obs, wrapped_action, reward, next_obs, mask)  # Append transition to memory
 

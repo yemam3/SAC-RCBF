@@ -15,7 +15,7 @@ MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SafetyGym_point': [0, 0, 0, 50, 200.
 
 class DynamicsModel:
 
-    def __init__(self, env, args, max_history_count=1000):
+    def __init__(self, env, args):
         """Constructor of DynamicsModel.
 
         Parameters
@@ -34,7 +34,7 @@ class DynamicsModel:
         self.disturb_estimators = None
         self.disturbance_history = dict()
         self.history_counter = 0  # keeping only 1000 points in the buffer
-        self.max_history_count = max_history_count  # How many points we want to have in the GP
+        self.max_history_count = args.gp_model_size  # How many points we want to have in the GP
         self.disturbance_history['state'] = np.zeros((self.max_history_count, self.n_s))
         self.disturbance_history['disturbance'] = np.zeros((self.max_history_count, self.n_s))
         self.train_x = None  # x-data used to fit the last GP models
@@ -155,15 +155,20 @@ class DynamicsModel:
 
         """
 
+        expand_dims = len(obs.shape) == 1
+        if expand_dims:
+            obs = np.expand_dims(obs, 0)
+
         if self.env.dynamics_mode == 'Unicycle':
-            theta = np.arctan2(obs[3], obs[2])
-            state = np.array([obs[0], obs[1], theta])
+            theta = np.arctan2(obs[:, 3], obs[:, 2])
+            state = np.array([obs[:, 0], obs[:, 1], theta.squeeze()])
         elif self.env.dynamics_mode == 'SafetyGym_point':
-            theta = np.arctan2(obs[3], obs[2])
-            state = np.array([obs[0], obs[1], theta, obs[4], obs[5]])
+            theta = np.arctan2(obs[:, 3], obs[:, 2])
+            state = np.array([obs[:, 0], obs[:, 1], theta.squeeze(), obs[:, 4], obs[:, 5]])
         else:
             raise Exception('Unknown dynamics')
-        return state
+
+        return state if not expand_dims else state.squeeze(0)
 
     def get_obs(self, state):
         """Given the state, this function returns it to an observation akin to the one obtained by calling env.step
