@@ -161,10 +161,18 @@ class DynamicsModel:
 
         if self.env.dynamics_mode == 'Unicycle':
             theta = np.arctan2(obs[:, 3], obs[:, 2])
-            state = np.array([obs[:, 0], obs[:, 1], theta.squeeze()])
+            state = np.zeros((obs.shape[0], 3))
+            state[:, 0] = obs[:, 0]
+            state[:, 1] = obs[:, 1]
+            state[:, 2] = theta
         elif self.env.dynamics_mode == 'SafetyGym_point':
             theta = np.arctan2(obs[:, 3], obs[:, 2])
-            state = np.array([obs[:, 0], obs[:, 1], theta.squeeze(), obs[:, 4], obs[:, 5]])
+            state = np.zeros((obs.shape[0], 5))
+            state[:, 0] = obs[:, 0]  # x
+            state[:, 1] = obs[:, 1]  # y
+            state[:, 2] = theta
+            state[:, 3] = obs[:, 4]  # v
+            state[:, 4] = obs[:, 5]  # omega
         else:
             raise Exception('Unknown dynamics')
 
