@@ -1,10 +1,21 @@
 import numpy as np
 import torch
 from gp_model import GPyDisturbanceEstimator
+from util import to_tensor, to_numpy
 
 """
-This file contains the DynamicsModel class. In short, depending on the environment selected, it contains the dynamics
-priors and learns the remaining disturbance term using GPs. 
+This file contains the DynamicsModel class. Depending on the environment selected, it contains the dynamics
+priors and learns the remaining disturbance term using GPs. The system is described as follows: 
+                        x_dot ∈ f(x) + g(x)u + D(x), 
+where x is the state, f and g are the drift and control dynamics respectively, and D(x) is the learned disturbance set. 
+
+A few things to note: 
+    - The prior depends on the dynamics. This is hard-coded as of now. In the future, one direction to take would be to 
+    get a few episodes in the env to determine the affine prior first using least-squares or something similar.
+    - The state is not the same as the observation and typically requires some pre-processing. These functions are supplied
+    here which are also, unfortunately, hard-coded as of now. 
+    - The functions here are sometimes used in batch-form or single point form, and sometimes the inputs are torch tensors 
+    and other times are numpy arrays. These are things to be mindful of, and output format is always same as input format.
 """
 
 
@@ -43,14 +54,16 @@ class DynamicsModel:
         # Point Robot specific dynamics (approx using unicycle + look-ahead)
         self.l_p = args.l_p
 
-    def predict_next_state(self, state, u, use_gps=True):
+        self.device = torch.device("cuda" if args.cuda else "cpu")
+
+    def predict_next_state(self, state_batch, u_batch, use_gps=True):
         """Given the current state and action, this function predicts the next state.
 
         Parameters
         ----------
-        state : ndarray
+        state_batch : ndarray
             State
-        u : ndarray
+        u_batch : ndarray
             Action
         use_gps : bool, optional
             Use GPs to return mean and var
@@ -61,16 +74,25 @@ class DynamicsModel:
             Next state
         """
 
+        expand_dims = len(state_batch.shape) == 1
+        if expand_dims:
+            state_batch = np.expand_dims(state_batch, dim=0)
+
         # Start with our prior for continuous time system x' = f(x) + g(x)u
-        next_state = state + self.env.dt * (self.get_f(state) + self.get_g(state) @ u)
+        next_state_batch = state_batch + self.env.dt * (self.get_f(state_batch) + (self.get_g(state_batch) @ np.expand_dims(u_batch, -1)).squeeze(-1))
 
         if use_gps:  # if we want estimate the disturbance, let's do it!
-            pred_mean, pred_std = self.predict_disturbance(state)
-            next_state += self.env.dt * pred_mean
+            pred_mean, pred_std = self.predict_disturbance(state_batch)
+            next_state_batch += self.env.dt * pred_mean
         else:
             pred_std = None
 
-        return next_state, self.env.dt * pred_std
+        if expand_dims:
+            next_state_batch = next_state_batch.squeeze(0)
+            if pred_std is not None:
+                pred_std = pred_std.squeeze(0)
+
+        return next_state_batch, self.env.dt * pred_std
 
     def predict_next_obs(self, state, u):
         """Predicts the next observation given the state and u. Note that this only predicts the mean next observation.
@@ -106,32 +128,33 @@ class DynamicsModel:
 
         if self.env.dynamics_mode == 'Unicycle':
 
-            def get_f(state):
-                f_x = np.zeros(state.shape)
+            def get_f(state_batch):
+                f_x = np.zeros(state_batch.shape)
                 return f_x
 
-            def get_g(state):
-                theta = state[2]
-                g_x = np.array([[np.cos(theta), 0],
-                                [np.sin(theta), 0],
-                                [            0, 1.0]])
+            def get_g(state_batch):
+                theta = state_batch[:, 2]
+                g_x = np.zeros((state_batch.shape[0], 3, 2))
+                g_x[:, 0, 0] = np.cos(theta)
+                g_x[:, 1, 0] = np.sin(theta)
+                g_x[:, 2, 1] = 1.0
                 return g_x
 
         elif self.env.dynamics_mode == 'SafetyGym_point':
 
-            def get_f(state):
-                f_x = np.array([ 9.*state[3] * np.cos(state[2]),   # x_dot = v*cos(θ)
-                                 9.*state[3] * np.sin(state[2]),   # y_dot = v*sin(θ)
-                                                   5.5*state[4],   # θ_dot = ω
-                                                  -20.*state[3],   # v_dot = u^ - damp_coeff * v
-                                                 -500.*state[4]])  # ω_dot = u^ω - damp_coeff * ω
+            def get_f(state_batch):
+                f_x = np.zeros(state_batch.shape)
+                f_x[:, 0] = 9.*state_batch[:, 3] * np.cos(state_batch[:, 2])  # x_dot = v*cos(θ)
+                f_x[:, 1] = 9.*state_batch[:, 3] * np.sin(state_batch[:, 2])  # y_dot = v*sin(θ)
+                f_x[:, 2] = 5.5*state_batch[:, 4]  # θ_dot = ω
+                f_x[:, 3] = -20.*state_batch[:, 3]  # v_dot = u^ - damp_coeff * v
+                f_x[:, 4] = -500.*state_batch[:, 4]  # ω_dot = u^ω - damp_coeff * ω
                 return f_x
 
-            def get_g(state):
-
-                g_x = np.zeros((5, 2))
-                g_x[3, 0] = 40.0  # v_dot = u^v - damp_coeff * ω
-                g_x[4, 1] = 1520.0  # ω_dot = u^ω - damp_coeff * ω
+            def get_g(state_batch):
+                g_x = np.zeros((state_batch.shape[0], 5, 2))
+                g_x[:, 3, 0] = 40.0  # v_dot = u^v - damp_coeff * ω
+                g_x[:, 4, 1] = 1520.0  # ω_dot = u^ω - damp_coeff * ω
                 return g_x
 
 
@@ -145,88 +168,122 @@ class DynamicsModel:
 
         Parameters
         ----------
-        obs : ndarray
+        obs_batch : ndarray or torch.tensor
             Environment observation.
 
         Returns
         -------
-        state : ndarray
+        state_batch : ndarray or torch.tensor
             State of the system.
 
         """
 
         expand_dims = len(obs.shape) == 1
+        is_tensor = torch.is_tensor(obs)
+
+        if is_tensor:
+            dtype = obs.dtype
+            device = obs.device
+            obs = to_numpy(obs)
+
         if expand_dims:
             obs = np.expand_dims(obs, 0)
 
         if self.env.dynamics_mode == 'Unicycle':
             theta = np.arctan2(obs[:, 3], obs[:, 2])
-            state = np.zeros((obs.shape[0], 3))
-            state[:, 0] = obs[:, 0]
-            state[:, 1] = obs[:, 1]
-            state[:, 2] = theta
+            state_batch = np.zeros((obs.shape[0], 3))
+            state_batch[:, 0] = obs[:, 0]
+            state_batch[:, 1] = obs[:, 1]
+            state_batch[:, 2] = theta
         elif self.env.dynamics_mode == 'SafetyGym_point':
             theta = np.arctan2(obs[:, 3], obs[:, 2])
-            state = np.zeros((obs.shape[0], 5))
-            state[:, 0] = obs[:, 0]  # x
-            state[:, 1] = obs[:, 1]  # y
-            state[:, 2] = theta
-            state[:, 3] = obs[:, 4]  # v
-            state[:, 4] = obs[:, 5]  # omega
+            state_batch = np.zeros((obs.shape[0], 5))
+            state_batch[:, 0] = obs[:, 0]  # x
+            state_batch[:, 1] = obs[:, 1]  # y
+            state_batch[:, 2] = theta
+            state_batch[:, 3] = obs[:, 4]  # v
+            state_batch[:, 4] = obs[:, 5]  # omega
         else:
             raise Exception('Unknown dynamics')
 
-        return state if not expand_dims else state.squeeze(0)
+        if expand_dims:
+            state_batch = state_batch.squeeze(0)
 
-    def get_obs(self, state):
+        return to_tensor(state_batch, dtype, device) if is_tensor else state_batch
+
+    def get_obs(self, state_batch):
         """Given the state, this function returns it to an observation akin to the one obtained by calling env.step
 
         Parameters
         ----------
         state : ndarray
-            Environment state.
+            Environment state batch of shape (batch_size, n_s)
 
         Returns
         -------
-        state : ndarray
-            State of the system.
+        obs : ndarray
+          Observation batch of shape (batch_size, n_o)
 
         """
 
         if self.env.dynamics_mode == 'Unicycle':
-            obs = np.array([state[0], state[1], np.cos(state[2]), np.sin(state[2])])
+            obs = np.zeros((state_batch.shape[0], 4))
+            obs[:, 0] = state_batch[:, 0]
+            obs[:, 1] = state_batch[:, 1]
+            obs[:, 2] = np.cos(state_batch[:, 2])
+            obs[:, 3] = np.sin(state_batch[:, 2])
         elif self.env.dynamics_mode == 'SafetyGym_point':
-            obs = np.array([state[0], state[1], np.cos(state[2]), np.sin(state[2]), state[3], state[4]])
+            obs = np.zeros((state_batch.shape[0], 6))
+            obs[:, 0] = state_batch[:, 0]
+            obs[:, 1] = state_batch[:, 1]
+            obs[:, 2] = np.cos(state_batch[:, 2])
+            obs[:, 3] = np.sin(state_batch[:, 2])
+            obs[:, 4] = state_batch[:, 3]
+            obs[:, 5] = state_batch[:, 4]
         else:
             raise Exception('Unknown dynamics')
         return obs
 
-    def append_transition(self, state, u, next_state):
+    def append_transition(self, state_batch, u_batch, next_state_batch):
         """Estimates the disturbance from the current dynamics transition and adds it to buffer.
 
         Parameters
         ----------
-        state : ndarray, shape(n_s,)
-        u : ndarray, shape(n_u,)
-        next_state : ndarray, shape(n_s,)
+        state_batch : ndarray
+            shape (n_s,) or (batch_size, n_s)
+        u_batch : ndarray
+            shape (n_u,) or (batch_size, n_u)
+        next_state_batch : ndarray
+            shape (n_s,) or (batch_size, n_s)
 
         Returns
         -------
 
         """
 
-        disturbance = (next_state - state - self.env.dt * (self.get_f(state) + self.get_g(state) @ u)) / self.env.dt
+        expand_dims = len(state_batch.shape) == 1
+
+        if expand_dims:
+            state_batch = np.expand_dims(state_batch, 0)
+            next_state_batch = np.expand_dims(next_state_batch, 0)
+            u_batch = np.expand_dims(u_batch, 0)
+
+        u_batch = np.expand_dims(u_batch, -1)  # for broadcasting batch matrix multiplication purposes
+
+        disturbance_batch = (next_state_batch - state_batch - self.env.dt * (self.get_f(state_batch) + (self.get_g(state_batch) @ u_batch).squeeze(-1))) / self.env.dt
 
         # Append new data point (state, disturbance) to our dataset
-        self.disturbance_history['state'][self.history_counter % self.max_history_count] = state
-        self.disturbance_history['disturbance'][self.history_counter % self.max_history_count] = disturbance
+        for i in range(state_batch.shape[0]):
 
-        # Increment how many data points we have
-        self.history_counter += 1
+            self.disturbance_history['state'][self.history_counter % self.max_history_count] = state_batch[i]
+            self.disturbance_history['disturbance'][self.history_counter % self.max_history_count] = disturbance_batch[i]
 
-        # Update GP models every max_history_count data points
-        if self.history_counter % (self.max_history_count/2) == 0:
-            self.fit_gp_model()
+            # Increment how many data points we have
+            self.history_counter += 1
+
+            # Update GP models every max_history_count data points
+            if self.history_counter % (self.max_history_count/2) == 0:
+                self.fit_gp_model()
 
     def fit_gp_model(self, training_iter=50):
         """
@@ -257,7 +314,7 @@ class DynamicsModel:
         self.disturb_estimators = []
         for i in range(self.n_s):
             # self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i]))
-            self.disturb_estimators.append(GPyDisturbanceEstimator(train_x_normalized, train_y_normalized[:, i]))
+            self.disturb_estimators.append(GPyDisturbanceEstimator(train_x_normalized, train_y_normalized[:, i], device=self.device))
             self.disturb_estimators[i].train(training_iter)
 
         # track the data I last used to fit the GPs for saving purposes (need it to initialize before loading weights)
@@ -269,17 +326,25 @@ class DynamicsModel:
 
         Parameters
         ----------
-        test_x : ndarray, shape(n_test, n_s)
-
+        test_x : ndarray or torch.tensor
+                shape(n_test, n_s)
         Returns
         -------
-        means: ndarray
+        means: ndarray or torch.tensor
             Prediction means -- shape(n_test, n_s)
-        vars: ndarray
+        vars: ndarray or torch.tensor
             Prediction variances -- shape(n_test, n_s)
         """
 
-        if len(test_x.shape) == 1:
+        is_tensor = torch.is_tensor(test_x)
+
+        if is_tensor:
+            dtype = test_x.dtype
+            device = test_x.device
+            test_x = to_numpy(test_x)
+
+        expand_dims = len(test_x.shape) == 1
+        if expand_dims:
             test_x = np.expand_dims(test_x, axis=0)
 
         means = np.zeros(test_x.shape)
@@ -300,7 +365,11 @@ class DynamicsModel:
             for i in range(self.n_s):
                 f_std[:, i] *= MAX_STD[self.env.dynamics_mode][i]
 
-        return means.squeeze(), f_std.squeeze()
+        if expand_dims:
+            means = means.squeeze(0)
+            f_std = f_std.squeeze(0)
+
+        return (to_tensor(means, dtype, device), to_tensor(f_std, dtype, device)) if is_tensor else (means, f_std)
 
     def load_disturbance_models(self, output):
 
@@ -314,7 +383,7 @@ class DynamicsModel:
             train_x = torch.load('{}/gp_models_train_x.pkl'.format(output))
             train_y = torch.load('{}/gp_models_train_y.pkl'.format(output))
             for i in range(self.n_s):
-                self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i]))
+                self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i], device=self.device))
                 self.disturb_estimators[i].model.load_state_dict(weights[i])
         except:
             raise Exception('Could not load GP models from {}'.format(output))

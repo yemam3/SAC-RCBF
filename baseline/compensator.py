@@ -63,15 +63,15 @@ class Compensator:
         self.comp_actor = CompensatorModel(state_dim, action_dim)
         self.comp_actor_optim = Adam(self.comp_actor.parameters(), lr=args.comp_rate)
 
-        if torch.cuda.is_available():
-            self.cuda()
+        self.device = torch.device("cuda" if args.cuda else "cpu")
+        self.comp_actor.to(self.device)
 
         # If its never been trained then we don't want to use it (useful for eval only)
         self.is_trained = False
 
 
     def __call__(self, observation):
-        action = to_numpy(self.comp_actor(to_tensor(observation))) * self.is_trained
+        action = to_numpy(self.comp_actor(to_tensor(observation, torch.FloatTensor, self.device))) * self.is_trained
         return scale_action(action, self.action_lb, self.action_ub)
 
     def train(self, rollouts, epochs=10):
@@ -106,13 +106,13 @@ class Compensator:
                 all_u_comp = np.vstack((all_u_comp, rollout['u_comp']))
                 all_u_safe = np.vstack((all_u_safe, rollout['u_safe']))
 
-            comp_actor_loss = criterion(self.comp_actor(to_tensor(all_obs)), to_tensor(all_u_comp + all_u_safe))
+            all_obs = to_tensor(all_obs, torch.FloatTensor, self.device)
+            all_u_comp = to_tensor(all_u_comp, torch.FloatTensor, self.device)
+            all_u_safe = to_tensor(all_u_safe, torch.FloatTensor, self.device)
+            comp_actor_loss = criterion(self.comp_actor(all_obs), all_u_comp + all_u_safe)
 
             comp_actor_loss.backward()
             self.comp_actor_optim.step()
-
-    def cuda(self):
-        self.comp_actor.cuda()
 
     def load_weights(self, output):
         if output is None: return

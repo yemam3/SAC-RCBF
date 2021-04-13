@@ -5,8 +5,6 @@ from torch.autograd import Variable
 import math
 
 USE_CUDA = torch.cuda.is_available()
-FLOAT = torch.cuda.FloatTensor if USE_CUDA else torch.FloatTensor
-
 
 def prRed(prt): print("\033[91m {}\033[00m".format(prt))
 
@@ -44,27 +42,32 @@ def mat_to_euler_2d(rot_mat):
     return theta
 
 
-def euler_to_mat_2d(theta):
-    s = np.sin(theta)
-    c = np.cos(theta)
-    return np.array([[c, -s], [s, c]])
+def euler_to_mat_2d(theta_batch):
+    s = np.sin(theta_batch)
+    c = np.cos(theta_batch)
+    Rs = np.zeros((theta_batch.shape[0], 2, 2))
+    Rs[:, 0, 0] = c
+    Rs[:, 0, 1] = -s
+    Rs[:, 1, 0] = s
+    Rs[:, 1, 1] = c
+    return Rs
 
+def to_numpy(x):
+    # convert torch tensor to numpy array
+    return x.cpu().detach().double().numpy()
 
-def to_numpy(var):
-    return var.cpu().data.numpy() if USE_CUDA else var.data.numpy()
+def to_tensor(x, dtype, device, requires_grad=False):
+    # convert numpy array to torch tensor
+    return torch.from_numpy(x).type(dtype).to(device).requires_grad_(requires_grad)
 
+def scale_action(action, action_lb, action_ub, device=None):
 
-def to_tensor(ndarray, requires_grad=False, dtype=FLOAT):
-    return Variable(
-        torch.from_numpy(ndarray), requires_grad=requires_grad
-    ).type(dtype)
-
-
-def scale_action(action, action_lb, action_ub):
+    if device is None:
+        device = torch.device("cpu")
     act_k = (action_ub - action_lb) / 2.
     act_b = (action_ub + action_lb) / 2.
     if torch.is_tensor(action):
-        return to_tensor(act_k) * action + to_tensor(act_b)
+        return to_tensor(act_k, torch.FloatTensor, device) * action + to_tensor(act_b, torch.FloatTensor, device)
     return act_k * action + act_b
 
 

@@ -5,18 +5,17 @@ import argparse
 import itertools
 import torch
 
-from compensator import Compensator
-from pytorch_sac.sac import SAC
-from pytorch_sac.replay_memory import ReplayMemory
-from cbf_cascade import CascadeCBFLayer
 from dynamics import DynamicsModel
 from build_env import *
 import os
-
 from util import prGreen, get_output_folder, prYellow
 from evaluator import Evaluator
-from generate_rollouts import generate_model_rollouts
 
+from pytorch_sac.replay_memory import ReplayMemory
+from baseline.compensator import Compensator
+from baseline.generate_rollouts import generate_model_rollouts
+from baseline.cbf_cascade import CascadeCBFLayer
+from pytorch_sac.sac import SAC
 
 def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 

@@ -30,29 +30,28 @@ class GPyDisturbanceEstimator:
     A wrapper around teh BaseGPy model above.
     """
 
-    def __init__(self, train_x, train_y, likelihood=None):
+    def __init__(self, train_x, train_y, likelihood=None, device=None):
+
+
+
+        if device:
+            self.device = device
+        else:
+            self.device = torch.device("cpu")
 
         if not torch.is_tensor(train_x):
-            train_x = to_tensor(train_x)
+            train_x = to_tensor(train_x, torch.FloatTensor, self.device)
         if not torch.is_tensor(train_y):
-            train_y = to_tensor(train_y)
+            train_y = to_tensor(train_y, torch.FloatTensor, self.device)
         self.train_x = train_x
         self.train_y = train_y
+
         if not likelihood:
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        self.likelihood = likelihood
+        self.likelihood = likelihood.to(self.device)
 
         self.model = BaseGPy(train_x, train_y, likelihood)
-
-        if torch.cuda.is_available():
-            self.cuda()
-
-    def cuda(self):
-
-        self.train_x = self.train_x.cuda()
-        self.train_y = self.train_y.cuda()
-        self.model = self.model.cuda()
-        self.likelihood = self.likelihood.cuda()
+        self.model = self.model.to(self.device)
 
     def train(self, training_iter, verbose=False):
 
@@ -87,10 +86,7 @@ class GPyDisturbanceEstimator:
         # Convert to torch tensor
         is_tensor = torch.is_tensor(test_x)
         if not is_tensor:
-           test_x = to_tensor(test_x)
-        # Move to GPU
-        if torch.cuda.is_available():
-            test_x = test_x.cuda()
+           test_x = to_tensor(test_x, torch.FloatTensor, self.device)
 
         # Get into evaluation (predictive posterior) mode
         self.model.eval()
