@@ -238,6 +238,7 @@ class UnicycleEnv(gym.Env):
 
         """
 
+        action = np.clip(action, -1.0, 1.0)
         state, reward, done, info = self._step(action)
         return self.get_obs(), reward, done, info
 
@@ -283,8 +284,10 @@ class UnicycleEnv(gym.Env):
 
         # Include constraint cost in reward
         if np.any(np.sum((self.state[:2] - self.hazards_locations)**2, axis=1) < self.hazards_radius**2):
-            info['cost'] += 0.1
-
+            if 'cost' in info:
+                info['cost'] += 0.1
+            else:
+                info['cost'] = 0.1
         return self.state, reward, done, info
 
     def goal_met(self):

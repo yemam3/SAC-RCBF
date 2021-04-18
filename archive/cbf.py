@@ -1,10 +1,5 @@
 import numpy as np
-import argparse
-import gym
-import matplotlib.pyplot as plt
-from tqdm import tqdm
 
-from dynamics import DynamicsModel
 from quadprog import solve_qp
 
 class CBFLayer:

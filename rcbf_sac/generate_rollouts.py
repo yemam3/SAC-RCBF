@@ -1,6 +1,6 @@
 import numpy as np
 from copy import deepcopy
-from util import euler_to_mat_2d, prCyan
+from util import euler_to_mat_2d, prCyan, prRed
 
 
 def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, goal_loc, k_horizon=1, batch_size=20, warmup=False):
@@ -31,7 +31,7 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, go
 
         # Construct Next Observation from State
         next_obs_batch_ = dynamics_model.get_obs(next_state_batch_)
-        dist2goal_prev = -np.log(next_obs_batch_[:, -1])
+        dist2goal_prev = -np.log(obs_batch_[:, -1])
         goal_rel = goal_loc - next_obs_batch_[:, :2]
         dist2goal = np.linalg.norm(goal_rel, axis=1)
         assert dist2goal.shape == (batch_size_,), 'dist2goal should be a vector of size (batch_size,), got {} instead'.format(dist2goal.shape)
@@ -60,7 +60,8 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, go
         # Delete Done Trajectories
         # prCyan('batch_size before omission = {}'.format(obs_batch_.shape))
         if np.sum(done_batch_) > 0:
-            obs_batch_[done_batch_ > 0] = []
+            print('reached_goal = {}'.format(done_batch_))
+            obs_batch_ = np.delete(obs_batch_, done_batch_ > 0, axis=0)
         # prCyan('batch_size after omission = {}, #dones = {}'.format(obs_batch_.shape, np.sum(done_batch_)))
 
     return memory_model

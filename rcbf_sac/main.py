@@ -34,7 +34,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
         obs = env.reset()
 
         while not done:
-            prYellow('Episode {} - step {}'.format(i_episode, episode_steps))
+            prYellow('Episode {} - step {} - eps_rew {} - eps_cost {}'.format(i_episode, episode_steps, episode_reward, episode_cost))
             state = dynamics_model.get_state(obs)
 
             # Generate Model rollouts
@@ -209,6 +209,7 @@ if __name__ == "__main__":
     parser.add_argument('--validate_episodes', default=20, type=int, help='how many episode to perform during validate experiment')
     parser.add_argument('--validate_steps', default=1000, type=int, help='how many steps to perform a validate experiment')
     # CBF, Dynamics, Env Args
+    parser.add_argument('--no_diff_qp', action='store_false', dest='diff_qp', help='Should the agent diff through the CBF?')
     parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
     parser.add_argument('--k_d', default=3.0, type=float)
     parser.add_argument('--gamma_b', default=100, type=float)
@@ -226,11 +227,12 @@ if __name__ == "__main__":
         args.resume = os.getcwd() + '/output/{}-run0'.format(args.env_name)
 
     if args.mode == 'train' and args.log_comet:
+        project_name = 'rl-cbf-unicycle' if args.env_name == 'Unicycle' else 'rl-cbf-unicycle-2'
         prYellow('Logging experiment on comet.ml!')
         # Create an experiment with your api key
         experiment = Experiment(
             api_key="FN3hKqygLp0oA32u1zSm7YtLF",
-            project_name="rl-cbf-unicycle-2",
+            project_name=project_name,
             workspace="yemam3",
         )
         # Log args on comet.ml

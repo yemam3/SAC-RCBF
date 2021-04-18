@@ -7,6 +7,7 @@ import numpy as np
 from rcbf_sac.diff_cbf_qp import CBFQPLayer
 from util import to_tensor
 
+
 class RCBF_SAC(object):
 
     def __init__(self, num_inputs, action_space, env, args):
@@ -46,6 +47,7 @@ class RCBF_SAC(object):
         # CBF layer
         self.env = env
         self.cbf_layer = CBFQPLayer(env, args, args.gamma_b, args.k_d, args.l_p)
+        self.diff_qp = args.diff_qp
 
     def select_action(self, state, dynamics_model, evaluate=False, warmup=False):
 
@@ -64,7 +66,9 @@ class RCBF_SAC(object):
                 action, _, _ = self.policy.sample(state)
             else:
                 _, _, action = self.policy.sample(state)
+
         safe_action = self.get_safe_action(state, action, dynamics_model)
+
         return safe_action.detach().cpu().numpy()[0] if expand_dim else safe_action.detach().cpu().numpy()
 
     def update_parameters(self, memory, batch_size, updates, dynamics_model, memory_model=None, real_ratio=None):
@@ -107,9 +111,9 @@ class RCBF_SAC(object):
 
         with torch.no_grad():
             next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch)
-            # Compute next safe actions using Differentiable CBF-QP
-            next_state_action_safe = self.get_safe_action(next_state_batch, next_state_action, dynamics_model)
-            qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_state_action_safe)
+            if self.diff_qp:  # Compute next safe actions using Differentiable CBF-QP
+                next_state_action = self.get_safe_action(next_state_batch, next_state_action, dynamics_model)
+            qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_state_action)
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_next_target)
         qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
@@ -123,10 +127,10 @@ class RCBF_SAC(object):
 
         # Compute Actions and log probabilities
         pi, log_pi, _ = self.policy.sample(state_batch)
-        # Compute safe action using Differentiable CBF-QP
-        safe_pi = self.get_safe_action(state_batch, pi, dynamics_model)
+        if self.diff_qp:  # Compute safe action using Differentiable CBF-QP
+            pi = self.get_safe_action(state_batch, pi, dynamics_model)
 
-        qf1_pi, qf2_pi = self.critic(state_batch, safe_pi)
+        qf1_pi, qf2_pi = self.critic(state_batch, pi)
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
 
         policy_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]

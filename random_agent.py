@@ -6,7 +6,7 @@ from dynamics import DynamicsModel
 from copy import deepcopy
 import matplotlib.pyplot as plt
 from util import *
-from baseline.cbf_cascade import CascadeCBFLayer
+from archive.cbf_cascade import CascadeCBFLayer
 
 
 def simple_controller(env, state, goal):
