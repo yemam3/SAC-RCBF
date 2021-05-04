@@ -8,7 +8,7 @@ from util import prRed
 from util import prCyan
 from time import time
 from qpth.qp import QPFunction
-
+from util import to_tensor
 
 class CBFQPLayer():
 
@@ -331,7 +331,6 @@ class CBFQPLayer():
 
             batch_size = state_batch.shape[0]
             num_cbfs = self.num_cbfs
-            action_dim = self.action_dim
             hazards_radius = self.env.hazards_radius
             hazards_locations = to_tensor(self.env.hazards_locations, torch.FloatTensor, self.device)
             collision_radius = hazards_radius + 0.15  # add a little buffer
@@ -340,44 +339,55 @@ class CBFQPLayer():
             thetas = state_batch[:, 2, :].squeeze(-1)
             c_thetas = torch.cos(thetas)
             s_thetas = torch.sin(thetas)
-            # p(x): lookahead output (batch_size, 2)
-            p_x = torch.zeros((batch_size, 2)).to(self.device)
-            p_x[:, 0] = state_batch[:, 0, :].squeeze(-1) + l_p * c_thetas
-            p_x[:, 1] = state_batch[:, 1, :].squeeze(-1) + l_p * s_thetas
 
-            # p_dot = f_p + g_p u
+            # p(x): lookahead output (batch_size, 2)
+            ps = torch.zeros((batch_size, 2)).to(self.device)
+            ps[:, 0] = state_batch[:, 0, :].squeeze(-1) + l_p * c_thetas
+            ps[:, 1] = state_batch[:, 1, :].squeeze(-1) + l_p * s_thetas
+
+            # p_dot(x) = f_p(x) + g_p(x)u + D_p where f_p(x) = 0,  g_p(x) = RL and D_p is the disturbance
+
+            # f_p(x) = [0,...,0]^T
             f_ps = torch.zeros((batch_size, 2, 1)).to(self.device)
+
+            # g_p(x) = RL where L = diag([1, l_p])
             Rs = torch.zeros((batch_size, 2, 2)).to(self.device)
             Rs[:, 0, 0] = c_thetas
             Rs[:, 0, 1] = -s_thetas
             Rs[:, 1, 0] = s_thetas
             Rs[:, 1, 1] = c_thetas
-            L = torch.zeros((batch_size, 2, 2)).to(self.device)
-            L[:, 0, 0] = 1
-            L[:, 1, 1] = l_p
-            g_ps = torch.bmm(Rs, L)  # (batch_size, 2, 2)
+            Ls = torch.zeros((batch_size, 2, 2)).to(self.device)
+            Ls[:, 0, 0] = 1
+            Ls[:, 1, 1] = l_p
+            g_ps = torch.bmm(Rs, Ls)  # (batch_size, 2, 2)
+
+            # D_p(x) = g_p [0 D_θ]^T + [D_x1 D_x2]^T
+            mu_theta_aug = torch.zeros([batch_size, 2, 1]).to(self.device)
+            mu_theta_aug[:, 1, :] = mean_pred_batch[:, 2, :]
+            mu_ps = torch.bmm(g_ps, mu_theta_aug) + mean_pred_batch[:, :2, :]
+            sigma_theta_aug = torch.zeros([batch_size, 2, 1]).to(self.device)
+            sigma_theta_aug[:, 1, :] = sigma_pred_batch[:, 2, :]
+            sigma_ps = torch.bmm(torch.abs(g_ps), sigma_theta_aug) + sigma_pred_batch[:, :2, :]
 
             # hs (batch_size, hazards_locations)
-            # p_x (batch_size, 2)
-            p_x_hzds = p_x.repeat((1, num_cbfs)).reshape((batch_size, num_cbfs, 2))
-            hs = 0.5 * (torch.sum((p_x_hzds - hazards_locations.view(1, num_cbfs, -1)) ** 2,
-                                  axis=2) - collision_radius ** 2)  # 1/2 * (||x - x_obs||^2 - r^2)
+            ps_hzds = ps.repeat((1, num_cbfs)).reshape((batch_size, num_cbfs, 2))
 
-            dhdxs = (p_x_hzds - hazards_locations.view(1, num_cbfs, -1))  # (batch_size, n_cbfs, 2)
+            hs = 0.5 * (torch.sum((ps_hzds - hazards_locations.view(1, num_cbfs, -1)) ** 2, axis=2) - collision_radius ** 2)  # 1/2 * (||x - x_obs||^2 - r^2)
+
+            dhdps = (ps_hzds - hazards_locations.view(1, num_cbfs, -1))  # (batch_size, n_cbfs, 2)
                                                                           # (batch_size, 2, 1)
             n_u = action_batch.shape[1]  # dimension of control inputs
             num_constraints = num_cbfs + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
 
             # Inequality constraints (G[u, eps] <= h)
-            G = torch.zeros((batch_size, num_constraints,
-                             n_u + 1)).to(self.device)  # the plus 1 is for epsilon (to make sure qp is always feasible)
+            G = torch.zeros((batch_size, num_constraints, n_u + 1)).to(self.device)  # the extra variable is for epsilon (to make sure qp is always feasible)
             h = torch.zeros((batch_size, num_constraints)).to(self.device)
             ineq_constraint_counter = 0
 
             # Add inequality constraints
-            G[:, :num_cbfs, :n_u] = -torch.bmm(dhdxs, g_ps)  # h1^Tg(x)
+            G[:, :num_cbfs, :n_u] = -torch.bmm(dhdps, g_ps)  # h1^Tg(x)
             G[:, :num_cbfs, n_u] = -1  # for slack
-            h[:, :num_cbfs] = gamma_b * (hs ** 3) + (torch.bmm(dhdxs, f_ps) + torch.bmm(torch.bmm(dhdxs, g_ps), action_batch)).squeeze(-1)
+            h[:, :num_cbfs] = gamma_b * (hs ** 3) + (torch.bmm(dhdps, f_ps + mu_ps) - torch.bmm(torch.abs(dhdps), sigma_ps) + torch.bmm(torch.bmm(dhdps, g_ps), action_batch)).squeeze(-1)
             ineq_constraint_counter += num_cbfs
 
             # Let's also build the cost matrices, vectors to minimize control effort and penalize slack

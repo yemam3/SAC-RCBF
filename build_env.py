@@ -219,7 +219,7 @@ class UnicycleEnv(gym.Env):
         # Disturbance
         self.disturbed_dynamics = noisy
         self.disturb_mean = np.zeros((3,))
-        self.disturb_covar = np.diag([0.005, 0.005, 0.05]) * 10
+        self.disturb_covar = np.diag([0.005, 0.005, 0.05]) * 20
 
 
     def step(self, action):

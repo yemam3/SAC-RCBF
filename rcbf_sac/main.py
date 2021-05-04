@@ -227,7 +227,7 @@ if __name__ == "__main__":
         args.resume = os.getcwd() + '/output/{}-run0'.format(args.env_name)
 
     if args.mode == 'train' and args.log_comet:
-        project_name = 'rl-cbf-unicycle' if args.env_name == 'Unicycle' else 'rl-cbf-unicycle-2'
+        project_name = 'sac-rcbf-unicycle-environment' if args.env_name == 'Unicycle' else 'rl-cbf-unicycle-2'
         prYellow('Logging experiment on comet.ml!')
         # Create an experiment with your api key
         experiment = Experiment(
@@ -237,6 +237,12 @@ if __name__ == "__main__":
         )
         # Log args on comet.ml
         experiment.log_parameters(vars(args))
+        experiment_tags = ['MB' if args.model_based else 'MF',
+                           str(args.batch_size) + '_batch',
+                           str(args.updates_per_step) + '_step_updates',
+                           'diff_qp' if args.diff_qp else 'reg_qp']
+        print(experiment_tags)
+        experiment.add_tags(experiment_tags)
     else:
         experiment = None
 
