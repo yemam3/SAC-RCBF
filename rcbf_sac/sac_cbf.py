@@ -53,6 +53,8 @@ class RCBF_SAC(object):
         # compensator
         if args.use_comp:
             self.compensator = Compensator(num_inputs, action_space.shape[0], action_space.low, action_space.high, args)
+        else:
+            self.compensator = None
 
     def select_action(self, state, dynamics_model, evaluate=False, warmup=False):
 

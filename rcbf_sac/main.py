@@ -216,7 +216,7 @@ if __name__ == "__main__":
                         help='random seed (default: 12345)')
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='batch size (default: 256)')
-    parser.add_argument('--num_steps', type=int, default=1000001, metavar='N',
+    parser.add_argument('--num_steps', type=int, default=200001, metavar='N',
                         help='maximum number of steps (default: 1000000)')
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
