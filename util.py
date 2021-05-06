@@ -62,12 +62,8 @@ def to_tensor(x, dtype, device, requires_grad=False):
 
 def scale_action(action, action_lb, action_ub, device=None):
 
-    if device is None:
-        device = torch.device("cpu")
     act_k = (action_ub - action_lb) / 2.
     act_b = (action_ub + action_lb) / 2.
-    if torch.is_tensor(action):
-        return to_tensor(act_k, torch.FloatTensor, device) * action + to_tensor(act_b, torch.FloatTensor, device)
     return act_k * action + act_b
 
 

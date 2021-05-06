@@ -11,8 +11,8 @@ import os
 from util import prGreen, get_output_folder, prYellow
 from evaluator import Evaluator
 
-from pytorch_sac.replay_memory import ReplayMemory
-from archive.compensator import Compensator
+from rcbf_sac.replay_memory import ReplayMemory
+from rcbf_sac.compensator import Compensator
 from archive.generate_rollouts import generate_model_rollouts
 from archive.cbf_cascade import CascadeCBFLayer
 from pytorch_sac.sac import SAC

@@ -1,12 +1,13 @@
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
-from utils import soft_update, hard_update
-from pytorch_sac.model import GaussianPolicy, QNetwork, DeterministicPolicy
+from rcbf_sac.utils import soft_update, hard_update
+from rcbf_sac.model import GaussianPolicy, QNetwork, DeterministicPolicy
 import numpy as np
 from rcbf_sac.diff_cbf_qp import CBFQPLayer
 from util import to_tensor
-
+from compensator import Compensator
+from copy import deepcopy
 
 class RCBF_SAC(object):
 
@@ -49,6 +50,10 @@ class RCBF_SAC(object):
         self.cbf_layer = CBFQPLayer(env, args, args.gamma_b, args.k_d, args.l_p)
         self.diff_qp = args.diff_qp
 
+        # compensator
+        if args.use_comp:
+            self.compensator = Compensator(num_inputs, action_space.shape[0], action_space.low, action_space.high, args)
+
     def select_action(self, state, dynamics_model, evaluate=False, warmup=False):
 
         state = to_tensor(state, torch.FloatTensor, self.device)
@@ -67,9 +72,20 @@ class RCBF_SAC(object):
             else:
                 _, _, action = self.policy.sample(state)
 
+        if self.compensator:
+            action_comp = self.compensator(state)
+            action += action_comp
+
         safe_action = self.get_safe_action(state, action, dynamics_model)
 
-        return safe_action.detach().cpu().numpy()[0] if expand_dim else safe_action.detach().cpu().numpy()
+        if not self.compensator:
+            return safe_action.detach().cpu().numpy()[0] if expand_dim else safe_action.detach().cpu().numpy()
+        else:
+            action_cbf = safe_action - action
+            action_comp = action_comp.detach().cpu().numpy()[0] if expand_dim else action_comp.detach().cpu().numpy()
+            action_cbf = action_cbf.detach().cpu().numpy()[0] if expand_dim else action_cbf.detach().cpu().numpy()
+            safe_action = safe_action.detach().cpu().numpy()[0] if expand_dim else safe_action.detach().cpu().numpy()
+            return safe_action, action_comp, action_cbf
 
     def update_parameters(self, memory, batch_size, updates, dynamics_model, memory_model=None, real_ratio=None):
         """
@@ -156,6 +172,12 @@ class RCBF_SAC(object):
             soft_update(self.critic_target, self.critic, self.tau)
 
         return qf1_loss.item(), qf2_loss.item(), policy_loss.item(), alpha_loss.item(), alpha_tlogs.item()
+
+    def update_parameters_compensator(self, comp_rollouts):
+
+        if self.compensator:
+            self.compensator.train(comp_rollouts)
+
 
     # Save model parameters
     def save_model(self, output):

@@ -6,7 +6,7 @@ import itertools
 import torch
 
 from rcbf_sac.sac_cbf import RCBF_SAC
-from pytorch_sac.replay_memory import ReplayMemory
+from rcbf_sac.replay_memory import ReplayMemory
 from dynamics import DynamicsModel
 from build_env import *
 import os
@@ -26,6 +26,9 @@ def train(agent, env, dynamics_model, args, experiment=None):
     total_numsteps = 0
     updates = 0
 
+    if args.use_comp:
+        compensator_rollouts = []
+
     for i_episode in itertools.count(1):
         episode_reward = 0
         episode_cost = 0
@@ -33,8 +36,16 @@ def train(agent, env, dynamics_model, args, experiment=None):
         done = False
         obs = env.reset()
 
+        # Saving rollout here to train compensator
+        if args.use_comp:
+            episode_rollout = dict()
+            episode_rollout['obs'] = np.zeros((0, env.observation_space.shape[0]))
+            episode_rollout['u_safe'] = np.zeros((0, env.action_space.shape[0]))
+            episode_rollout['u_comp'] = np.zeros((0, env.action_space.shape[0]))
+
         while not done:
-            prYellow('Episode {} - step {} - eps_rew {} - eps_cost {}'.format(i_episode, episode_steps, episode_reward, episode_cost))
+            if episode_steps % 10 == 0:
+                prYellow('Episode {} - step {} - eps_rew {} - eps_cost {}'.format(i_episode, episode_steps, episode_reward, episode_cost))
             state = dynamics_model.get_state(obs)
 
             # Generate Model rollouts
@@ -75,10 +86,10 @@ def train(agent, env, dynamics_model, args, experiment=None):
                         experiment.log_metric('entropy_temperature/alpha', alpha, step=updates)
                     updates += 1
 
-            if args.start_steps > total_numsteps:
-                action = agent.select_action(obs, dynamics_model, warmup=True)  # Sample action from policy
+            if args.use_comp:
+                action, action_comp, action_cbf = agent.select_action(obs, dynamics_model, warmup=args.start_steps > total_numsteps)
             else:
-                action = agent.select_action(obs, dynamics_model)  # Sample action from policy
+                action = agent.select_action(obs, dynamics_model, warmup=args.start_steps > total_numsteps)  # Sample action from policy
 
             next_obs, reward, done, info = env.step(action)  # Step
             if 'cost_exception' in info:
@@ -104,7 +115,18 @@ def train(agent, env, dynamics_model, args, experiment=None):
                 agent.save_model(args.output)
                 dynamics_model.save_disturbance_models(args.output)
 
+            # append comp rollout with step before updating
+            if args.use_comp:
+                episode_rollout['obs'] = np.vstack((episode_rollout['obs'], obs))
+                episode_rollout['u_safe'] = np.vstack((episode_rollout['u_safe'], action_cbf))
+                episode_rollout['u_comp'] = np.vstack((episode_rollout['u_comp'], action_comp))
+
             obs = next_obs
+
+        # Train compensator
+        if args.use_comp and i_episode < args.comp_train_episodes:
+            compensator_rollouts.append(episode_rollout)
+            agent.update_parameters_compensator(compensator_rollouts)
 
         if total_numsteps > args.num_steps:
             break
@@ -118,7 +140,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
                                                                                              round(episode_reward, 2), round(episode_cost, 2)))
 
         # Evaluation
-        if i_episode % 10 == 0 and args.eval is True:
+        if i_episode % 5 == 0 and args.eval is True:
             print('Size of replay buffers: real : {}, \t\t model : {}'.format(len(memory), len(memory_model)))
             avg_reward = 0.
             avg_cost = 0.
@@ -129,7 +151,10 @@ def train(agent, env, dynamics_model, args, experiment=None):
                 episode_cost = 0
                 done = False
                 while not done:
-                    action = agent.select_action(obs, dynamics_model, evaluate=True)
+                    if args.use_comp:
+                        action, _, _ = agent.select_action(obs, dynamics_model, evaluate=True)
+                    else:
+                        action = agent.select_action(obs, dynamics_model, evaluate=True)  # Sample action from policy
                     next_obs, reward, done, info = env.step(action)
                     episode_reward += reward
                     episode_cost += info.get('cost', 0)
@@ -175,7 +200,7 @@ if __name__ == "__main__":
     parser.add_argument('--policy', default="Gaussian",
                         help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
     parser.add_argument('--eval', type=bool, default=True,
-                        help='Evaluates a policy a policy every 10 episode (default: True)')
+                        help='Evaluates a policy a policy every 5 episode (default: True)')
     parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                         help='discount factor for reward (default: 0.99)')
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
@@ -206,7 +231,7 @@ if __name__ == "__main__":
     parser.add_argument('--cuda', action="store_true",
                         help='run on CUDA (default: False)')
     parser.add_argument('--resume', default='default', type=str, help='Resuming model path for testing')
-    parser.add_argument('--validate_episodes', default=20, type=int, help='how many episode to perform during validate experiment')
+    parser.add_argument('--validate_episodes', default=5, type=int, help='how many episode to perform during validate experiment')
     parser.add_argument('--validate_steps', default=1000, type=int, help='how many steps to perform a validate experiment')
     # CBF, Dynamics, Env Args
     parser.add_argument('--no_diff_qp', action='store_false', dest='diff_qp', help='Should the agent diff through the CBF?')
@@ -220,6 +245,10 @@ if __name__ == "__main__":
     parser.add_argument('--real_ratio', default=0.3, type=float, help='Portion of data obtained from real replay buffer for training.')
     parser.add_argument('--k_horizon', default=1, type=int, help='horizon of model-based rollouts')
     parser.add_argument('--rollout_batch_size', default=5, type=int, help='Size of initial states batch to rollout from.')
+    # Compensator
+    parser.add_argument('--comp_rate', default=0.005, type=float, help='Compensator learning rate')
+    parser.add_argument('--comp_train_episodes', default=20, type=int, help='Number of initial episodes to train compensator for.')
+    parser.add_argument('--use_comp', type=bool, default=False, help='Should the compensator be used.')
     args = parser.parse_args()
 
     args.output = get_output_folder(args.output, args.env_name)
@@ -241,10 +270,15 @@ if __name__ == "__main__":
                            str(args.batch_size) + '_batch',
                            str(args.updates_per_step) + '_step_updates',
                            'diff_qp' if args.diff_qp else 'reg_qp']
+        if args.use_comp:
+            experiment_tags.append('use_comp')
         print(experiment_tags)
         experiment.add_tags(experiment_tags)
     else:
         experiment = None
+
+    if args.use_comp and (args.model_based or args.diff_qp):
+        raise Exception('Compensator can only be used with model free RL and regular CBF.')
 
     # Environment
     env = build_env(args)

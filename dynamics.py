@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from gp_model import GPyDisturbanceEstimator
+from rcbf_sac.gp_model import GPyDisturbanceEstimator
 from util import to_tensor, to_numpy
 
 """

@@ -49,10 +49,6 @@ class Compensator:
         self.state_dim = state_dim
         self.action_dim = action_dim
 
-        # Action Lower and Upper Bounds
-        self.action_lb = action_lb
-        self.action_ub = action_ub
-
         # # Create Actor and Critic Network
         # net_cfg = {
         #     'hidden1': args.hidden1,
@@ -66,12 +62,16 @@ class Compensator:
         self.device = torch.device("cuda" if args.cuda else "cpu")
         self.comp_actor.to(self.device)
 
+        # Action Lower and Upper Bounds
+        self.action_lb = to_tensor(action_lb, torch.FloatTensor, self.device)
+        self.action_ub = to_tensor(action_ub, torch.FloatTensor, self.device)
+
         # If its never been trained then we don't want to use it (useful for eval only)
         self.is_trained = False
 
 
     def __call__(self, observation):
-        action = to_numpy(self.comp_actor(to_tensor(observation, torch.FloatTensor, self.device))) * self.is_trained
+        action = self.comp_actor(observation) * self.is_trained
         return scale_action(action, self.action_lb, self.action_ub)
 
     def train(self, rollouts, epochs=10):
