@@ -9,7 +9,7 @@ priors and learns the remaining disturbance term using GPs. The system is descri
                         x_dot ∈ f(x) + g(x)u + D(x), 
 where x is the state, f and g are the drift and control dynamics respectively, and D(x) is the learned disturbance set. 
 
-A few things to note: 
+A few things to note:
     - The prior depends on the dynamics. This is hard-coded as of now. In the future, one direction to take would be to 
     get a few episodes in the env to determine the affine prior first using least-squares or something similar.
     - The state is not the same as the observation and typically requires some pre-processing. These functions are supplied
@@ -20,8 +20,8 @@ A few things to note:
 
 
 DYNAMICS_MODE = {'Unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
-                 'SafetyGym_point': {'n_s': 5, 'n_u': 2}}  # state = [x y θ v ω]
-MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SafetyGym_point': [0, 0, 0, 50, 200.]}
+                 'SimulatedCars': {'n_s': 10, 'n_u': 1}}  # state = [x y θ v ω]
+MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SimulatedCars': [0, 0, 0, 0, 0, 0, 0, 0, 0]}
 
 
 class DynamicsModel:
@@ -56,7 +56,7 @@ class DynamicsModel:
 
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
-    def predict_next_state(self, state_batch, u_batch, use_gps=True):
+    def predict_next_state(self, state_batch, u_batch, t_batch=None, use_gps=True):
         """Given the current state and action, this function predicts the next state.
 
         Parameters
@@ -65,6 +65,8 @@ class DynamicsModel:
             State
         u_batch : ndarray
             Action
+        t_batch: ndarray, optional
+            Time batch for state dependant dynamics
         use_gps : bool, optional
             Use GPs to return mean and var
 
@@ -79,7 +81,10 @@ class DynamicsModel:
             state_batch = np.expand_dims(state_batch, dim=0)
 
         # Start with our prior for continuous time system x' = f(x) + g(x)u
-        next_state_batch = state_batch + self.env.dt * (self.get_f(state_batch) + (self.get_g(state_batch) @ np.expand_dims(u_batch, -1)).squeeze(-1))
+        if t_batch:
+            next_state_batch = state_batch + self.env.dt * (self.get_f(state_batch, t_batch) + (self.get_g(state_batch, t_batch) @ np.expand_dims(u_batch, -1)).squeeze(-1))
+        else:
+            next_state_batch = state_batch + self.env.dt * (self.get_f(state_batch) + (self.get_g(state_batch) @ np.expand_dims(u_batch, -1)).squeeze(-1))
 
         if use_gps:  # if we want estimate the disturbance, let's do it!
             pred_mean, pred_std = self.predict_disturbance(state_batch)
@@ -140,23 +145,38 @@ class DynamicsModel:
                 g_x[:, 2, 1] = 1.0
                 return g_x
 
-        elif self.env.dynamics_mode == 'SafetyGym_point':
+        elif self.env.dynamics_mode == 'SimulatedCars':
 
-            def get_f(state_batch):
-                f_x = np.zeros(state_batch.shape)
-                f_x[:, 0] = 9.*state_batch[:, 3] * np.cos(state_batch[:, 2])  # x_dot = v*cos(θ)
-                f_x[:, 1] = 9.*state_batch[:, 3] * np.sin(state_batch[:, 2])  # y_dot = v*sin(θ)
-                f_x[:, 2] = 5.5*state_batch[:, 4]  # θ_dot = ω
-                f_x[:, 3] = -20.*state_batch[:, 3]  # v_dot = u^ - damp_coeff * v
-                f_x[:, 4] = -500.*state_batch[:, 4]  # ω_dot = u^ω - damp_coeff * ω
-                return f_x
+            dt = 0.05
+            kp = 4.0
+            k_brake = 20.0
 
-            def get_g(state_batch):
-                g_x = np.zeros((state_batch.shape[0], 5, 2))
-                g_x[:, 3, 0] = 40.0  # v_dot = u^v - damp_coeff * ω
-                g_x[:, 4, 1] = 1520.0  # ω_dot = u^ω - damp_coeff * ω
+            def get_g(state_batch, t_batch):
+
+                g_x = np.zeros((state_batch.shape[0], 10, 1))
+                g_x[:, 7, 0] = 1.0  # Car 4's acceleration
                 return g_x
 
+            def get_f(state_batch, t_batch):
+
+                # Current State
+                pos = state_batch[:, ::2]
+                vels = state_batch[:, 1::2]
+
+                # Action (acceleration)
+                vels_des = 30.0 * np.ones((state_batch.shape[0], 5))  # Desired velocities
+                vels_des[:, 0] -= 10 * np.sin(0.2 * t_batch)
+                accels = kp * (vels_des - vels)
+                p_diff = np.append(1.0e10, -np.diff(pos))
+                mask = p_diff < 6.0
+                accels[mask] -= k_brake * p_diff[mask]
+                accels[3] = 0.0  # Car 4 is controlled directly
+
+                # f(x)
+                f_x = np.zeros(state_batch.shape)
+                f_x[:, ::2] = vels
+                f_x[:, 1::2] = accels
+                return f_x
 
         else:
             raise Exception('Unknown Dynamics mode.')
@@ -195,14 +215,8 @@ class DynamicsModel:
             state_batch[:, 0] = obs[:, 0]
             state_batch[:, 1] = obs[:, 1]
             state_batch[:, 2] = theta
-        elif self.env.dynamics_mode == 'SafetyGym_point':
-            theta = np.arctan2(obs[:, 3], obs[:, 2])
-            state_batch = np.zeros((obs.shape[0], 5))
-            state_batch[:, 0] = obs[:, 0]  # x
-            state_batch[:, 1] = obs[:, 1]  # y
-            state_batch[:, 2] = theta
-            state_batch[:, 3] = obs[:, 4]  # v
-            state_batch[:, 4] = obs[:, 5]  # omega
+        elif self.env.dynamics_mode == 'SimulatedCars':
+            state_batch = obs
         else:
             raise Exception('Unknown dynamics')
 
@@ -232,14 +246,8 @@ class DynamicsModel:
             obs[:, 1] = state_batch[:, 1]
             obs[:, 2] = np.cos(state_batch[:, 2])
             obs[:, 3] = np.sin(state_batch[:, 2])
-        elif self.env.dynamics_mode == 'SafetyGym_point':
-            obs = np.zeros((state_batch.shape[0], 6))
-            obs[:, 0] = state_batch[:, 0]
-            obs[:, 1] = state_batch[:, 1]
-            obs[:, 2] = np.cos(state_batch[:, 2])
-            obs[:, 3] = np.sin(state_batch[:, 2])
-            obs[:, 4] = state_batch[:, 3]
-            obs[:, 5] = state_batch[:, 4]
+        elif self.env.dynamics_mode == 'SimulatedCars':
+            obs = state_batch
         else:
             raise Exception('Unknown dynamics')
         return obs

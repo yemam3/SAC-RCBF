@@ -34,32 +34,37 @@ class CBFQPLayer():
         if self.env.dynamics_mode not in DYNAMICS_MODE:
             raise Exception('Dynamics mode not supported.')
 
-        self.num_cbfs = len(env.hazards_locations)
+        if self.env.dynamics_mode == 'Unicycle':
+            self.num_cbfs = len(env.hazards_locations)
+        elif self.env.dynamics_mode == 'SimulatedCars':
+            self.num_cbfs = 2
+
         self.action_dim = env.action_space.shape[0]
         self.num_ineq_constraints = self.num_cbfs + 2 * self.action_dim
+
         # self.cbf_layer = self.build_cbf_layer()
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
-    def build_cbf_layer(self):
-        """Builds the CvxpyLayer CBF layer.
-
-        Returns
-        -------
-        cbf_qp_layer : cvxpylayers.torch.CvxpyLayer
-            CBF-based Safety layer
-        """
-
-        # Define and solve the CVXPY problem.
-        P_sqrt = cp.Parameter((self.action_dim + 1, self.action_dim + 1))
-        q = cp.Parameter((self.action_dim + 1))
-        G = cp.Parameter((self.num_cbfs + 2 * self.action_dim, self.action_dim + 1))
-        h = cp.Parameter((self.num_cbfs + 2 * self.action_dim))
-        x = cp.Variable(self.action_dim + 1)
-        prob = cp.Problem(cp.Minimize(0.5 * cp.sum_squares(P_sqrt @ x) + q.T @ x), [G @ x <= h])
-        assert prob.is_dpp()
-        cbf_qp_layer = CvxpyLayer(prob, parameters=[P_sqrt, q, G, h], variables=[x])
-
-        return cbf_qp_layer
+    # def build_cbf_layer(self):
+    #     """Builds the CvxpyLayer CBF layer.
+    #
+    #     Returns
+    #     -------
+    #     cbf_qp_layer : cvxpylayers.torch.CvxpyLayer
+    #         CBF-based Safety layer
+    #     """
+    #
+    #     # Define and solve the CVXPY problem.
+    #     P_sqrt = cp.Parameter((self.action_dim + 1, self.action_dim + 1))
+    #     q = cp.Parameter((self.action_dim + 1))
+    #     G = cp.Parameter((self.num_cbfs + 2 * self.action_dim, self.action_dim + 1))
+    #     h = cp.Parameter((self.num_cbfs + 2 * self.action_dim))
+    #     x = cp.Variable(self.action_dim + 1)
+    #     prob = cp.Problem(cp.Minimize(0.5 * cp.sum_squares(P_sqrt @ x) + q.T @ x), [G @ x <= h])
+    #     assert prob.is_dpp()
+    #     cbf_qp_layer = CvxpyLayer(prob, parameters=[P_sqrt, q, G, h], variables=[x])
+    #
+    #     return cbf_qp_layer
 
     def get_safe_action(self, state_batch, action_batch, mean_pred_batch, sigma_batch):
         """
@@ -92,7 +97,7 @@ class CBFQPLayer():
         Ps, qs, Gs, hs = self.get_cbf_qp_constraints(state_batch, action_batch, mean_pred_batch, sigma_batch)
         build_qp_time = time()
         safe_action_batch = self.solve_qp(Ps, qs, Gs, hs)
-        # prCyan('Time to get constraints = {} - Time to solve QP = {} - time per qp = {} - batch_size = {} - device = {}'.format(build_qp_time - start_time, time() - build_qp_time, (time() - build_qp_time) / safe_action_batch.shape[0], Ps.shape[0], Ps.device))
+        prCyan('Time to get constraints = {} - Time to solve QP = {} - time per qp = {} - batch_size = {} - device = {}'.format(build_qp_time - start_time, time() - build_qp_time, (time() - build_qp_time) / safe_action_batch.shape[0], Ps.shape[0], Ps.device))
         # The actual safe action is the cbf action + the nominal action
         final_action = torch.clamp(action_batch + safe_action_batch, -1.0, 1.0)
 
@@ -215,121 +220,8 @@ class CBFQPLayer():
         mean_pred_batch = torch.unsqueeze(mean_pred_batch, -1)
         sigma_pred_batch = torch.unsqueeze(sigma_pred_batch, -1)
 
-        if self.env.dynamics_mode == 'SafetyGym_point':
-            num_cbfs = self.num_cbfs
-            action_dim = self.action_dim
-            hazards_radius = self.env.hazards_radius
-            hazards_locations = torch.tensor(self.env.hazards_locations).to(self.device)
-            collision_radius = hazards_radius + 0.15  # add a little buffer
-            l_p = self.l_p
+        if self.env.dynamics_mode == 'Unicycle':
 
-            # γ_1 and γ_2
-            gamma_1 = gamma_b
-            gamma_2 = gamma_b
-
-            # Transformations needed for point-lookahead output p
-            thetas = state_batch[:, 2, :]
-            c_thetas = torch.cos(thetas)
-            s_thetas = torch.sin(thetas)
-
-            # p(x): lookahead output (batch_size, 2, 1)
-            ps = torch.zeros((batch_size, 2, 1)).to(self.device)
-            ps[:, 0, :] = state_batch[:, 0] + l_p * c_thetas
-            ps[:, 1, :] = state_batch[:, 1] + l_p * s_thetas
-
-            # Rotation Matrices
-            Rs = torch.zeros((batch_size, 2, 2)).to(self.device)
-            Rs[:, 0, 0] = c_thetas.squeeze()
-            Rs[:, 0, 1] = -s_thetas.squeeze()
-            Rs[:, 1, 0] = s_thetas.squeeze()
-            Rs[:, 1, 1] = c_thetas.squeeze()
-            # Derivative of Rotation Matrices
-            Rds = torch.zeros((batch_size, 2, 2)).to(self.device)
-            Rds[:, 0, 0] = -s_thetas.squeeze()
-            Rds[:, 0, 1] = -c_thetas.squeeze()
-            Rds[:, 1, 0] = c_thetas.squeeze()
-            Rds[:, 1, 1] = -s_thetas.squeeze()
-
-            L = torch.zeros((batch_size, 2, 2)).to(self.device)
-            L[:, 0, 0] = 1
-            L[:, 1, 1] = l_p
-
-            # p_dot = RL[v ω]^T  - (batch_size, 2, 1)
-            weighted_vw = state_batch[:, -2:, :].clone()
-            weighted_vw[:, 0, :] *= 9.
-            weighted_vw[:, 1, :] *= 5.5
-
-            pds = torch.bmm(torch.bmm(Rs, L), weighted_vw)
-            # f_x - (batch_size, 5, 1)
-            f_x = torch.zeros((batch_size, 5, 1)).to(self.device)
-            f_x[:, :2, :] = pds
-            f_x[:, 2, :] = 5.5 * state_batch[:, 4]  #
-            f_x[:, 3, :] = -20. * state_batch[:, 3]
-            f_x[:, 4, :] = -500. * state_batch[:, 4]  # damping term on ω
-            # D_mean_x - (batch_size, 5, 1)
-            D_mean_x = mean_pred_batch
-            D_mean_x[:, :3, :] = 0
-            D_sigma_x = sigma_pred_batch
-            D_sigma_x[:, :3, :] = 0
-            # Add mean disturbance to f_x
-            f_x += D_mean_x
-            # g_x
-            g_x = torch.zeros((batch_size, 5, action_dim)).to(self.device)
-            g_x[:, 3, 0] = 40.0  # v_dot = u^v
-            g_x[:, 4, 1] = 1520.0  # ω_dot = u^ω
-
-            # The Barrier function h
-            ps_rep = ps.repeat((1, num_cbfs, 1)).reshape((batch_size, num_cbfs, 2))
-            hs = 0.5 * (torch.sum((ps_rep - hazards_locations) ** 2,
-                                  dim=2) - collision_radius ** 2)  # 1/2 * (||x - x_obs||^2 - r^2)
-
-            dhdxs = torch.zeros((batch_size, num_cbfs, 5)).to(self.device)
-            dhdxs[:, :, :2] = (ps_rep - hazards_locations)  # (batch_size, num_cbfs, 2)
-
-            # dh/dp^T f(p) -- (batch_size, n_cbfs, 5) @ (batch_size, 5, 1)
-            Lfhs = torch.bmm(dhdxs, f_x).squeeze(-1)
-            assert Lfhs.shape == (batch_size, num_cbfs)
-
-            # Gradient of Lfh wrt x = [p_x, p_y, θ, v, ω]
-            dLfhdxs = torch.zeros((batch_size, num_cbfs, 5)).to(self.device)
-            dLfhdxs[:, :, :2] = pds.repeat(1, num_cbfs, 1).reshape((batch_size, num_cbfs, 2))  # dLfhdp
-            dLfhdxs[:, :, 2] = torch.bmm(dhdxs[:, :, :2], torch.bmm(torch.bmm(Rds, L), weighted_vw)).squeeze(
-                -1)  # dLfhdθ
-            dLfhdxs[:, :, 3] = torch.bmm(dhdxs[:, :, :2], Rs[:, :, 0].view(batch_size, 2, 1)).squeeze(-1)  # dLfhdv
-            dLfhdxs[:, :, 4] = l_p * torch.bmm(dhdxs[:, :, :2], Rs[:, :, 1].view(batch_size, 2, 1)).squeeze(
-                -1)  # dLfhdω
-
-            Lffhs = torch.bmm(dLfhdxs, f_x).squeeze(-1)  # (batch_size, n_cbfs)
-            Lgfhs = torch.bmm(dLfhdxs, g_x)  # (batch_size, n_cbfs, n_u)
-
-            assert Lffhs.shape == (batch_size, num_cbfs)
-            assert Lgfhs.shape == (batch_size, num_cbfs, action_dim)
-
-            num_constraints = num_cbfs + 2 * action_dim  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
-
-            # Inequality constraints (G[u, eps] <= h)
-            G = torch.zeros((batch_size, num_constraints, action_dim + 1)).to(
-                self.device)  # the plus 1 is for epsilon (to make sure qp is always feasible)
-            h = torch.zeros((batch_size, num_constraints)).to(self.device)
-            ineq_constraint_counter = 0
-
-            # First let's add the cbf constraints
-            # Constraint is of the following form Lffh + Lgfh*(u + u_nom) + (γ_1 + γ_2) Lfh + γ_2 h >= 0
-            G[:, :num_cbfs, :action_dim] = - Lgfhs
-            G[:, :num_cbfs, action_dim] = -1  # for slack
-
-            h[:, :num_cbfs] = gamma_1 * gamma_2 * hs + (gamma_1 + gamma_2) * Lfhs + Lffhs + torch.bmm(Lgfhs,
-                                                                                                      action_batch).squeeze()
-            h[:, :num_cbfs] += - self.k_d * torch.bmm(torch.abs(dLfhdxs), D_sigma_x).squeeze(-1)
-            ineq_constraint_counter += num_cbfs
-
-            # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
-            P = torch.diag(torch.tensor([1.e0, 1.e-2, 1e3])).repeat(batch_size, 1, 1).to(self.device)
-            q = torch.zeros((batch_size, action_dim + 1)).to(self.device)
-
-        elif self.env.dynamics_mode == 'Unicycle':
-
-            batch_size = state_batch.shape[0]
             num_cbfs = self.num_cbfs
             hazards_radius = self.env.hazards_radius
             hazards_locations = to_tensor(self.env.hazards_locations, torch.FloatTensor, self.device)
@@ -392,6 +284,79 @@ class CBFQPLayer():
 
             # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
             P = torch.diag(torch.tensor([1.e0, 1.e-2, 1e5])).repeat(batch_size, 1, 1).to(self.device)
+            q = torch.zeros((batch_size, n_u + 1)).to(self.device)
+
+        elif self.env.dynamics_mode == 'SimulatedCars':
+
+            n_u = action_batch.shape[1]  # dimension of control inputs
+            num_constraints = self.num_cbfs + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
+            collision_radius = 6.0
+
+            # Inequality constraints (G[u, eps] <= h)
+            G = torch.zeros((batch_size, num_constraints, n_u + 1)).to(self.device)  # the extra variable is for epsilon (to make sure qp is always feasible)
+            h = torch.zeros((batch_size, num_constraints)).to(self.device)
+            ineq_constraint_counter = 0
+
+            # Current State
+            pos = state_batch[:, ::2, 0]
+            vels = state_batch[:, 1::2, 0]
+
+            # Action (acceleration)
+            vels_des = 30.0 * torch.ones((batch_size, 5)).to(self.device)  # Desired velocities
+            # vels_des[:, 0] -= 10 * np.sin(0.2 * t_batch) don't need this since we're only concerned with cars 3,4,5 anyways
+            accels = env.kp * (vels_des - vels)
+            p_diff = 1.0e10 * torch.ones((batch_size, 5)).to(self.device)
+            p_diff[:, 1:] = -np.diff(pos, axis=1)
+            mask = p_diff < 6.0
+            accels[mask] -= env.k_brake * p_diff[mask]
+            accels[:, 3] = 0.0  # Car 4 is controlled directly
+
+            # f(x)
+            f_x = torch.zeros((state_batch.shape[0], state_batch.shape[1])).to(self.device)
+            f_x[:, ::2] = vels
+            f_x[:, 1::2] = accels
+
+            # g(x)
+            g_x = torch.zeros((state_batch.shape[0], state_batch.shape[1])).to(self.device)
+            g_x[:, 7, 0] = 1.0  # Car 4's acceleration
+
+            # h1
+            h13 = 0.5 * (((pos[:, 2] - pos[:, 3]) ** 2) - collision_radius ** 2)
+            h15 = 0.5 * (((pos[:, 4] - pos[:, 3]) ** 2) - collision_radius ** 2)
+
+            # dh1/dt = Lfh1
+            h13_dot = (pos[:, 3] - pos[:, 2]) * (vels[:, 3] - vels[:, 2])
+            h15_dot = (pos[:, 3] - pos[:, 4]) * (vels[:, 3] - vels[:, 4])
+
+            # Lffh1
+            dLfh13dx = torch.zeros((batch_size, 10)).to(self.device)
+            dLfh13dx[:, 4] = (vels[:, 2] - vels[:, 3])  # Car 3 pos
+            dLfh13dx[:, 5] = (pos[:, 2] - pos[:, 3])  # Car 3 vel
+            dLfh13dx[:, 6] = (vels[:, 3] - vels[:, 2])
+            dLfh13dx[:, 7] = (pos[:, 3] - pos[:, 2])
+            Lffh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1))
+
+            dLfh15dx = np.zeros((batch_size, 10)).to(self.device)
+            dLfh15dx[:, 8] = (vels[:, 4] - vels[:, 3])  # Car 5 pos
+            dLfh15dx[:, 9] = (pos[:, 4] - pos[:, 3])  # Car 5 vels
+            dLfh15dx[:, 6] = (vels[:, 3] - vels[:, 4])
+            dLfh15dx[:, 7] = (pos[:, 3] - pos[:, 4])
+            Lffh15 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1))
+
+            # Lfgh1
+            Lgfh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), g_x)
+            Lgfh15 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), g_x)
+
+            # Inequality constraints (G[u, eps] <= h)
+            h[:, 0] = Lffh13 + (gamma_b + gamma_b) * h13_dot + gamma_b * gamma_b * h13
+            h[:, 1] = Lffh15 + (gamma_b + gamma_b) * h15_dot + gamma_b * gamma_b * h15
+            G[batch_size, 0, 0] = -Lgfh13
+            G[batch_size, 1, 0] = -Lgfh15
+            G[:, :self.num_cbfs, n_u] = -1  # for slack
+            ineq_constraint_counter += self.num_cbfs
+
+            # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
+            P = torch.diag(torch.tensor([1.0, 1e5])).repeat(batch_size, 1, 1).to(self.device)
             q = torch.zeros((batch_size, n_u + 1)).to(self.device)
 
         else:
