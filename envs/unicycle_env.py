@@ -16,12 +16,13 @@ class UnicycleEnv(gym.Env):
         # They must be gym.spaces objects
         # Example when using discrete actions:
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,))
+        self.safe_action_space = spaces.Box(low=-1.2, high=1.2, shape=(2,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(7,))
         self.bds = np.array([[-3., -3.], [3., 3.]])
         self.hazards_radius = 0.6
         self.hazards_locations = np.array([[0., 0.], [-1., 1.], [-1., -1.], [1., -1.], [1., 1.]]) * 1.5
         self.dt = 0.02
-        self._max_episode_steps = 1000
+        self.max_episode_steps = 1000
         self.reward_goal = 1.0
         self.goal_size = 0.3
         # Initialize Env
@@ -94,7 +95,7 @@ class UnicycleEnv(gym.Env):
             reward += self.reward_goal
             done = True
         else:
-            done = self.episode_step >= self._max_episode_steps
+            done = self.episode_step >= self.max_episode_steps
 
 
         # Include constraint cost in reward
@@ -265,3 +266,67 @@ def get_random_hazard_locations(n_hazards, hazard_radius, bds=None):
             raise Exception('Could not place hazards in arena.')
 
     return hazards_locs
+
+if __name__ == "__main__":
+
+    import matplotlib.pyplot as plt
+    from archive.cbf_cascade import CascadeCBFLayer
+    from dynamics import DynamicsModel
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env-name', default="SafetyGym", help='Either SafetyGym or Unicycle.')
+    parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
+    parser.add_argument('--k_d', default=2.0, type=float)
+    parser.add_argument('--gamma_b', default=50, type=float)
+    parser.add_argument('--cuda', action="store_true", help='run on CUDA (default: False)')
+    args = parser.parse_args()
+
+    env = UnicycleEnv()
+    dynamics_model = DynamicsModel(env, args)
+    cbf_wrapper = CascadeCBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
+
+
+    def simple_controller(env, state, goal):
+        goal_xy = goal[:2]
+        goal_dist = -np.log(goal[2])  # the observation is np.exp(-goal_dist)
+        v = 4.0 * goal_dist
+        relative_theta = 1.0 * np.arctan2(goal_xy[1], goal_xy[0])
+        omega = 5.0 * relative_theta
+        return np.clip(np.array([v, omega]), env.action_space.low, env.action_space.high)
+
+    obs = env.reset()
+    done = False
+    episode_reward = 0
+    episode_step = 0
+
+    # Plot initial state
+    fig, ax = plt.subplots()  # note we must use plt.subplots, not plt.subplot
+    for i in range(len(env.hazards_locations)):
+        ax.add_patch(plt.Circle(env.hazards_locations[i], env.hazards_radius, color='r'))
+    ax.add_patch(plt.Circle(env.goal_pos, env.goal_size, color='g'))
+    p_pos = ax.scatter(obs[0], obs[1])
+    p_theta = plt.quiver(obs[0], obs[1], obs[0] + .2 * obs[2], .2 * obs[3])
+    plt.xlim([-3.0, 3.0])
+    plt.ylim([-3.0, 3.0])
+    ax.set_aspect('equal', 'box')
+
+    while not done:
+        # Plot current state
+        p_pos.set_offsets([obs[0], obs[1]])
+        p_theta.XY[:, 0] = obs[0]
+        p_theta.XY[:, 1] = obs[1]
+        p_theta.set_UVC(.2 * obs[2], .2 * obs[3])
+        # Take Action and get next state
+        # random_action = env.action_space.sample()
+        state = dynamics_model.get_state(obs)
+        random_action = simple_controller(env, state, obs[-3:])
+        disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
+        action_safe = cbf_wrapper.get_u_safe(random_action, state, disturb_mean, disturb_std)
+        obs, reward, done, info = env.step(random_action + action_safe)
+        plt.pause(0.01)
+        episode_reward += reward
+        episode_step += 1
+        print('step {} \tepisode_reward = {}'.format(episode_step, episode_reward))
+    plt.show()
+

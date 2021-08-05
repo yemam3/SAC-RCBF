@@ -4,6 +4,7 @@ from comet_ml import Experiment
 import argparse
 import itertools
 import torch
+import numpy as np
 
 from rcbf_sac.sac_cbf import RCBF_SAC
 from rcbf_sac.replay_memory import ReplayMemory
@@ -108,7 +109,8 @@ def train(agent, env, dynamics_model, args, experiment=None):
             # Update state and store transition for GP model learning
             next_state = dynamics_model.get_state(next_obs)
             if episode_steps % 2 == 0:
-                dynamics_model.append_transition(state, action, next_state)
+                # TODO: Clean up line below, specifically (t_batch)
+                dynamics_model.append_transition(state, action, next_state, t_batch=np.array([episode_steps*env.dt]))
 
             # [optional] save intermediate model
             if total_numsteps % int(args.num_steps / 10) == 0:
@@ -256,7 +258,7 @@ if __name__ == "__main__":
         args.resume = os.getcwd() + '/output/{}-run0'.format(args.env_name)
 
     if args.mode == 'train' and args.log_comet:
-        project_name = 'sac-rcbf-unicycle-environment' if args.env_name == 'Unicycle' else 'rl-cbf-unicycle-2'
+        project_name = 'sac-rcbf-unicycle-environment' if args.env_name == 'Unicycle' else 'sac-rcbf-sim-cars-env'
         prYellow('Logging experiment on comet.ml!')
         # Create an experiment with your api key
         experiment = Experiment(

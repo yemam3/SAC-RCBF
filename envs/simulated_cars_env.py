@@ -15,10 +15,11 @@ class SimulatedCarsEnv(gym.Env):
         super(SimulatedCarsEnv, self).__init__()
 
         self.dynamics_mode = 'SimulatedCars'
-        self.action_space = spaces.Box(low=-100.0, high=100.0, shape=(1,))
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,))
+        self.safe_action_space = spaces.Box(low=-3.0, high=3.0, shape=(1,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(10,))
-        self._max_episode_steps = 80
-        self.dt = 0.05
+        self.max_episode_steps = 160
+        self.dt = 0.02
 
         # Gains
         self.kp = 4.0
@@ -50,14 +51,14 @@ class SimulatedCarsEnv(gym.Env):
         pos = self.state[::2]
         vels = self.state[1::2]
 
-        # Actions (acceleration)
+        # Actions (accelerations of Cars 1 to 5)
         vels_des = 30.0 * np.ones(5)  # Desired velocities
         vels_des[0] -= 10*np.sin(0.2*self.t)
         accels = self.kp * (vels_des - vels)
-        p_diff = np.append(1.0e10, -np.diff(pos))
-        mask = p_diff < 6.0
-        accels[mask] -= self.k_brake * p_diff[mask]
-        accels[3] = 0.0  # Car 4 is controlled directly
+        accels[1] -= self.k_brake * (pos[0] - pos[1]) * ((pos[0] - pos[1]) < 6.0)
+        accels[2] -= self.k_brake * (pos[1] - pos[2]) * ((pos[1] - pos[2]) < 6.0)
+        accels[3] = 0.0  # Car 4's acceleration is controlled directly
+        accels[4] -= self.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 12.0)
 
         # Determine action of each car
         f_x = np.zeros(10)
@@ -65,7 +66,7 @@ class SimulatedCarsEnv(gym.Env):
 
         f_x[::2] = vels  # Derivatives of positions are velocities
         f_x[1::2] = accels  # Derivatives of velocities are acceleration
-        g_x[7] = 1.0  # Car 4's acceleration (idx = 2*4 - 1) is the control input
+        g_x[7] = 50.0  # Car 4's acceleration (idx = 2*4 - 1) is the control input
 
         self.state += self.dt * (f_x + g_x * action)
 
@@ -73,18 +74,18 @@ class SimulatedCarsEnv(gym.Env):
 
         self.episode_step += 1  # steps in episode
 
-        done = self.episode_step >= self._max_episode_steps # done?
+        done = self.episode_step >= self.max_episode_steps  # done?
 
         info = {}
 
-        return self._get_obs(), self._get_reward(action), done, info
+        return self._get_obs(), self._get_reward(action[0]), done, info
 
     def _get_reward(self, action):
 
         car_4_pos = self.state[6]  # car's 4 position
         car_4_vel = self.state[7]  # car's 4 velocity
 
-        r = -np.abs(car_4_vel) * action * (action > 0)
+        r = - np.abs(car_4_vel) * np.abs(action) * (action > 0) / self.max_episode_steps
 
         if (self.state[4] - car_4_pos) < 2.99:  # How far is car 3?
             r -= np.abs(500 / (self.state[4] - car_4_pos))
@@ -146,30 +147,45 @@ class SimulatedCarsEnv(gym.Env):
 if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
+    from archive.cbf_cascade import CascadeCBFLayer
+    from dynamics import DynamicsModel
+    import argparse
 
-    def func_to_vectorize(x, y, dx, dy, scaling=0.01):
-        plt.arrow(x, y, dx*scaling, dy*scaling, fc="k", ec="k", head_width=0.06, head_length=0.1)
-
-    vectorized_arrow_drawing = np.vectorize(func_to_vectorize)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--env-name', default="SafetyGym", help='Either SafetyGym or Unicycle.')
+    parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
+    parser.add_argument('--k_d', default=2.0, type=float)
+    parser.add_argument('--gamma_b', default=50, type=float)
+    parser.add_argument('--cuda', action="store_true", help='run on CUDA (default: False)')
+    args = parser.parse_args()
 
     env = SimulatedCarsEnv()
+    dynamics_model = DynamicsModel(env, args)
+    cbf_wrapper = CascadeCBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
+
     obs = env.reset()
     done = False
+    episode_reward = 0
 
     # Plot initial state
-    p_pos = plt.plot(obs[::2], np.zeros(5), 'bo')[0]
+    p_pos = plt.scatter(obs[::2], np.zeros(5), marker='s', s=13*60, cmap='Accent', c=list(range(5)))
     p_vel = plt.quiver(obs[::2], np.zeros(5), obs[1::2], np.zeros(5))
 
     while not done:
         # Plot current state
         pos = obs[::2]
-        p_pos.set_xdata(obs[::2])
+        p_pos.set_offsets(np.c_[pos, np.zeros(pos.shape)])
         p_vel.XY[:, 0] = obs[::2]
         p_vel.set_UVC(obs[1::2], np.zeros(5))
         # Take Action and get next state
-        random_action = 2.0 * (np.random.random() - 0.5)
-        obs, reward, done, info = env.step(random_action)
+        random_action = env.action_space.sample()
+        disturb_mean, disturb_std = dynamics_model.predict_disturbance(obs)
+        action_safe = cbf_wrapper.get_u_safe(random_action, obs, disturb_mean, disturb_std)
+        obs, reward, done, info = env.step(random_action + action_safe)
         plt.xlim([pos[-1] - 5.0, pos[0] + 5.0])
         plt.pause(0.1)
+        episode_reward += reward
 
+
+        print('episode_reward = {}'.format(episode_reward))
     plt.show()

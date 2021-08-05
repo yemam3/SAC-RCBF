@@ -10,7 +10,8 @@ from time import time
 from qpth.qp import QPFunction
 from util import to_tensor
 
-class CBFQPLayer():
+
+class CBFQPLayer:
 
     def __init__(self, env, args, gamma_b=100, k_d=1.5, l_p=0.03):
         """Constructor of CBFLayer.
@@ -290,7 +291,7 @@ class CBFQPLayer():
 
             n_u = action_batch.shape[1]  # dimension of control inputs
             num_constraints = self.num_cbfs + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
-            collision_radius = 6.0
+            collision_radius = 4.5
 
             # Inequality constraints (G[u, eps] <= h)
             G = torch.zeros((batch_size, num_constraints, n_u + 1)).to(self.device)  # the extra variable is for epsilon (to make sure qp is always feasible)
@@ -302,14 +303,13 @@ class CBFQPLayer():
             vels = state_batch[:, 1::2, 0]
 
             # Action (acceleration)
-            vels_des = 30.0 * torch.ones((batch_size, 5)).to(self.device)  # Desired velocities
-            # vels_des[:, 0] -= 10 * np.sin(0.2 * t_batch) don't need this since we're only concerned with cars 3,4,5 anyways
-            accels = env.kp * (vels_des - vels)
-            p_diff = 1.0e10 * torch.ones((batch_size, 5)).to(self.device)
-            p_diff[:, 1:] = -np.diff(pos, axis=1)
-            mask = p_diff < 6.0
-            accels[mask] -= env.k_brake * p_diff[mask]
-            accels[:, 3] = 0.0  # Car 4 is controlled directly
+            vels_des = 30.0 * torch.ones((state_batch.shape[0], 5)).to(self.device)  # Desired velocities
+            # vels_des[:, 0] -= 10 * torch.sin(0.2 * t_batch)
+            accels = self.env.kp * (vels_des - vels)
+            accels[:, 1] -= self.env.k_brake * (pos[:, 0] - pos[:, 1]) * ((pos[:, 0] - pos[:, 1]) < 6.0)
+            accels[:, 2] -= self.env.k_brake * (pos[:, 1] - pos[:, 2]) * ((pos[:, 1] - pos[:, 2]) < 6.0)
+            accels[:, 3] = 0.0  # Car 4's acceleration is controlled directly
+            accels[:, 4] -= self.env.k_brake * (pos[:, 2] - pos[:, 4]) * ((pos[:, 2] - pos[:, 4]) < 12.0)
 
             # f(x)
             f_x = torch.zeros((state_batch.shape[0], state_batch.shape[1])).to(self.device)
@@ -317,8 +317,8 @@ class CBFQPLayer():
             f_x[:, 1::2] = accels
 
             # g(x)
-            g_x = torch.zeros((state_batch.shape[0], state_batch.shape[1])).to(self.device)
-            g_x[:, 7, 0] = 1.0  # Car 4's acceleration
+            g_x = torch.zeros((state_batch.shape[0], state_batch.shape[1], 1)).to(self.device)
+            g_x[:, 7, 0] = 50.0  # Car 4's acceleration
 
             # h1
             h13 = 0.5 * (((pos[:, 2] - pos[:, 3]) ** 2) - collision_radius ** 2)
@@ -334,24 +334,24 @@ class CBFQPLayer():
             dLfh13dx[:, 5] = (pos[:, 2] - pos[:, 3])  # Car 3 vel
             dLfh13dx[:, 6] = (vels[:, 3] - vels[:, 2])
             dLfh13dx[:, 7] = (pos[:, 3] - pos[:, 2])
-            Lffh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1))
+            Lffh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1)).squeeze()
 
-            dLfh15dx = np.zeros((batch_size, 10)).to(self.device)
+            dLfh15dx = torch.zeros((batch_size, 10)).to(self.device)
             dLfh15dx[:, 8] = (vels[:, 4] - vels[:, 3])  # Car 5 pos
             dLfh15dx[:, 9] = (pos[:, 4] - pos[:, 3])  # Car 5 vels
             dLfh15dx[:, 6] = (vels[:, 3] - vels[:, 4])
             dLfh15dx[:, 7] = (pos[:, 3] - pos[:, 4])
-            Lffh15 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1))
+            Lffh15 = torch.bmm(dLfh15dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1)).squeeze()
 
             # Lfgh1
-            Lgfh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), g_x)
-            Lgfh15 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), g_x)
+            Lgfh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), g_x).squeeze()
+            Lgfh15 = torch.bmm(dLfh15dx.view(batch_size, 1, -1), g_x).squeeze()
 
             # Inequality constraints (G[u, eps] <= h)
             h[:, 0] = Lffh13 + (gamma_b + gamma_b) * h13_dot + gamma_b * gamma_b * h13
             h[:, 1] = Lffh15 + (gamma_b + gamma_b) * h15_dot + gamma_b * gamma_b * h15
-            G[batch_size, 0, 0] = -Lgfh13
-            G[batch_size, 1, 0] = -Lgfh15
+            G[:, 0, 0] = -Lgfh13
+            G[:, 1, 0] = -Lgfh15
             G[:, :self.num_cbfs, n_u] = -1  # for slack
             ineq_constraint_counter += self.num_cbfs
 
@@ -392,8 +392,8 @@ class CBFQPLayer():
             max control input.
         """
 
-        u_min = torch.tensor(self.env.unwrapped.action_space.low)
-        u_max = torch.tensor(self.env.unwrapped.action_space.high)
+        u_min = torch.tensor(self.env.safe_action_space.low)
+        u_max = torch.tensor(self.env.safe_action_space.high)
 
         return u_min, u_max
 

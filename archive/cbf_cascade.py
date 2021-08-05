@@ -88,80 +88,7 @@ class CascadeCBFLayer:
             Inequality constraint vector (G[u,eps] <= h) of size (num_constraints,)
         """
 
-        if self.env.dynamics_mode == 'SafetyGym_point':
-
-
-            hazards_radius = self.env.hazards_radius
-            hazards_locations = self.env.hazards_locations
-            collision_radius = hazards_radius + 0.15  # add a little buffer
-
-            # γ_1 and γ_2
-            gamma_1 = self.gamma_b
-            gamma_2 = self.gamma_b
-
-            # Extract state
-            theta = state[2]
-            v = state[3]
-            omega = state[4]
-
-            # Transformations needed for point-lookahead output p
-            c_theta = np.cos(theta)
-            s_theta = np.sin(theta)
-            R = np.array([[c_theta, -s_theta],
-                          [s_theta, c_theta]])
-            Rd = np.array([[-s_theta, -c_theta],
-                          [c_theta, -s_theta]])
-            L = np.array([[1, 0],
-                          [0, self.l_p]])
-            p = state[:2] + self.l_p * R[:, 0].squeeze()
-            pd = R @ L @ (np.array([9., 5.5]) * state[-2:])  # RL[v ω]^T
-
-            # The Barrier function h
-            hs = 0.5 * (np.sum((p - hazards_locations)**2, axis=1) - collision_radius**2)  # 1/2 * (||p - p_obs||^2 - r^2)
-            dhdps = (p - hazards_locations)  # each row is dhdx_i for hazard i
-            Lfhs = dhdps @ pd
-
-            # Gradient of Lfh wrt x = [p_x, p_y, θ, v, ω]
-            dLfhdxs = np.zeros((len(hazards_locations), 5))
-            dLfhdxs[:, :2] = np.tile(pd, (len(hazards_locations), 1))  # dLfhdp
-            dLfhdxs[:,  2] = dhdps @ Rd @ L @ (np.array([9., 5.5]) * state[-2:])  # dLfhdθ
-            dLfhdxs[:,  3] = dhdps @ R[:, 0]  # dLfhdv
-            dLfhdxs[:,  4] = self.l_p * dhdps @ R[:, 1]  # dLfhdω
-            # f_x
-            f_x = np.zeros((5,)) + mean_pred * np.array([0., 0., 0., 1., 1.])
-            f_x[:2] = R @ L @ (np.array([9., 5.5]) * state[-2:])
-            f_x[2] = 5.5 * state[-1]
-            f_x[3] = -20. * state[3]
-            f_x[4] = -500. * state[4]  # damping term on ω
-            # g_x
-            g_x = np.zeros((5, 2))
-            g_x[3, 0] = 40.0  # v_dot = u^v
-            g_x[4, 1] = 1520.0  # ω_dot = u^ω
-
-            Lffhs = dLfhdxs @ f_x
-            Lgfhs = dLfhdxs @ g_x
-
-            n_u = u_nom.shape[0]  # dimension of control inputs
-            num_constraints = len(hazards_locations) + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
-
-            # Inequality constraints (G[u, eps] <= h)
-            G = np.zeros((num_constraints, n_u + 1))  # the plus 1 is for epsilon (to make sure qp is always feasible)
-            h = np.zeros(num_constraints)
-            ineq_constraint_counter = 0
-
-            # First let's add the cbf constraints
-            # Constraint is of the following form Lffh + Lgfh*(u + u_nom) + (γ_1 + γ_2) Lfh + γ_2 h >= 0
-            G[:len(hazards_locations), :n_u] = - Lgfhs
-            G[:len(hazards_locations), n_u] = -1  # for slack
-            h[:len(hazards_locations)] = gamma_1 * gamma_2 * hs + (gamma_1 + gamma_2) * Lfhs + Lffhs + Lgfhs @ u_nom
-            h[:len(hazards_locations)] += - self.k_d * np.abs(dLfhdxs) @ sigma_pred * np.array([0., 0., 0., 1., 1.])
-            ineq_constraint_counter += len(hazards_locations)
-
-            # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
-            P = np.diag([1.e0, 1.e-2, 1e5])  # in the original code, they use 1e24 instead of 1e7, but quadprog can't handle that...
-            q = np.zeros(n_u + 1)
-
-        elif self.env.dynamics_mode == 'Unicycle':
+        if self.env.dynamics_mode == 'Unicycle':
 
             collision_radius = self.env.hazards_radius + 0.07  # add a little buffer
 
@@ -219,6 +146,78 @@ class CascadeCBFLayer:
             P = np.diag([1.e1, 1.e-4, 1e7])  # in the original code, they use 1e24 instead of 1e7, but quadprog can't handle that...
             q = np.zeros(n_u + 1)
 
+        elif self.env.dynamics_mode == 'SimulatedCars':
+
+            n_u = u_nom.shape[0]  # dimension of control inputs
+            num_constraints = 4  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
+            collision_radius = 4.5
+
+            # Inequality constraints (G[u, eps] <= h)
+            G = np.zeros((num_constraints, n_u + 1))
+            h = np.zeros((num_constraints))
+            ineq_constraint_counter = 0
+
+            # Current State
+            pos = state[::2]
+            vels = state[1::2]
+
+            # Action (acceleration)
+            vels_des = 30.0 * np.ones(5)  # Desired velocities
+            # vels_des[0] -= 10 * np.sin(0.2 * t_batch)
+            accels = self.env.kp * (vels_des - vels)
+            accels[1] -= self.env.k_brake * (pos[0] - pos[1]) * ((pos[0] - pos[1]) < 6.0)
+            accels[2] -= self.env.k_brake * (pos[1] - pos[2]) * ((pos[1] - pos[2]) < 6.0)
+            accels[3] = 0.0  # Car 4's acceleration is controlled directly
+            accels[4] -= self.env.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 12.0)
+
+            # f(x)
+            f_x = np.zeros(state.shape[0])
+            f_x[::2] = vels
+            f_x[1::2] = accels
+
+            # g(x)
+            g_x = np.zeros(state.shape[0])
+            g_x[7] = 50.0  # Car 4's acceleration
+
+            # h1
+            h13 = 0.5 * (((pos[2] - pos[3]) ** 2) - collision_radius ** 2)
+            h15 = 0.5 * (((pos[4] - pos[3]) ** 2) - collision_radius ** 2)
+
+            # dh1/dt = Lfh1
+            h13_dot = (pos[3] - pos[2]) * (vels[3] - vels[2])
+            h15_dot = (pos[3] - pos[4]) * (vels[3] - vels[4])
+
+            # Lffh1
+            dLfh13dx = np.zeros(10)
+            dLfh13dx[4] = (vels[2] - vels[3])  # dLfh13/d(pos_car_3)
+            dLfh13dx[5] = (pos[2] - pos[3])  # dLfh13/d(vel_car_3)
+            dLfh13dx[6] = (vels[3] - vels[2])
+            dLfh13dx[7] = (pos[3] - pos[2])  # dLfh13/d(vel_car_4)
+            Lffh13 = np.dot(dLfh13dx, f_x)
+
+            dLfh15dx = np.zeros(10)
+            dLfh15dx[8] = (vels[4] - vels[3])  # Car 5 pos
+            dLfh15dx[9] = (pos[4] - pos[3])  # Car 5 vels
+            dLfh15dx[6] = (vels[3] - vels[4])
+            dLfh15dx[7] = (pos[3] - pos[4])
+            Lffh15 = np.dot(dLfh15dx, f_x)
+
+            # Lfgh1
+            Lgfh13 = np.dot(dLfh13dx, g_x)
+            Lgfh15 = np.dot(dLfh15dx, g_x)
+
+            # Inequality constraints (G[u, eps] <= h)
+            h[0] = Lffh13 + (self.gamma_b + self.gamma_b) * h13_dot + self.gamma_b * self.gamma_b * h13
+            h[1] = Lffh15 + (self.gamma_b + self.gamma_b) * h15_dot + self.gamma_b * self.gamma_b * h15
+            G[0, 0] = -Lgfh13
+            G[1, 0] = -Lgfh15
+            G[:2, n_u] = -1  # for slack
+            ineq_constraint_counter += 2
+
+            # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
+            P = np.diag([1.0, 1e5])
+            q = np.zeros(n_u + 1)
+
         else:
             raise Exception('Dynamics mode unknown!')
 
@@ -262,15 +261,20 @@ class CascadeCBFLayer:
             The solution of the qp without the last dimension (the slack).
         """
 
+        # print('P =\t {}'.format(P))
+        # print('q =\t {}'.format(q))
+        # print('G =\t {}'.format(G))
+        # print('h =\t {}'.format(h))
+
         try:
             sol = solve_qp(P, q, -G.T, -h)
             u_safe = sol[0][:-1]
         except ValueError as e:
-            print('P = {},\nq = {},\nG = {},\n h = {}.'.format(P, q, G, h))
+            print('P = {},\nq = {},\nG = {},\nh = {}.'.format(P, q, G, h))
             raise e
 
-        # if np.abs(sol[0][-1]) > 1e-1:
-        #     print('CBF indicates constraint violation might occur.')
+        if np.abs(sol[0][-1]) > 1e-1:
+            print('CBF indicates constraint violation might occur. epsilon = {}'.format(sol[0][-1]))
 
         return u_safe
 
@@ -322,8 +326,8 @@ class CascadeCBFLayer:
             max control input.
         """
 
-        u_min = self.env.unwrapped.action_space.low
-        u_max = self.env.unwrapped.action_space.high
+        u_min = self.env.safe_action_space.low
+        u_max = self.env.safe_action_space.high
 
         return u_min, u_max
 

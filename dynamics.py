@@ -21,7 +21,7 @@ A few things to note:
 
 DYNAMICS_MODE = {'Unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
                  'SimulatedCars': {'n_s': 10, 'n_u': 1}}  # state = [x y θ v ω]
-MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SimulatedCars': [0, 0, 0, 0, 0, 0, 0, 0, 0]}
+MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SimulatedCars': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
 
 
 class DynamicsModel:
@@ -52,7 +52,8 @@ class DynamicsModel:
         self.train_y = None  # y-data used to fit the last GP models
 
         # Point Robot specific dynamics (approx using unicycle + look-ahead)
-        self.l_p = args.l_p
+        if hasattr(args, 'l_p'):
+            self.l_p = args.l_p
 
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -97,6 +98,10 @@ class DynamicsModel:
             if pred_std is not None:
                 pred_std = pred_std.squeeze(0)
 
+        if t_batch:
+            next_t_batch = t_batch + self.env.dt
+            return next_state_batch, self.env.dt * pred_std, next_t_batch
+
         return next_state_batch, self.env.dt * pred_std
 
     def predict_next_obs(self, state, u):
@@ -133,11 +138,11 @@ class DynamicsModel:
 
         if self.env.dynamics_mode == 'Unicycle':
 
-            def get_f(state_batch):
+            def get_f(state_batch, t_batch=None):
                 f_x = np.zeros(state_batch.shape)
                 return f_x
 
-            def get_g(state_batch):
+            def get_g(state_batch, t_batch=None):
                 theta = state_batch[:, 2]
                 g_x = np.zeros((state_batch.shape[0], 3, 2))
                 g_x[:, 0, 0] = np.cos(theta)
@@ -147,14 +152,13 @@ class DynamicsModel:
 
         elif self.env.dynamics_mode == 'SimulatedCars':
 
-            dt = 0.05
             kp = 4.0
             k_brake = 20.0
 
             def get_g(state_batch, t_batch):
 
                 g_x = np.zeros((state_batch.shape[0], 10, 1))
-                g_x[:, 7, 0] = 1.0  # Car 4's acceleration
+                g_x[:, 7, 0] = 50.0  # Car 4's acceleration
                 return g_x
 
             def get_f(state_batch, t_batch):
@@ -167,10 +171,10 @@ class DynamicsModel:
                 vels_des = 30.0 * np.ones((state_batch.shape[0], 5))  # Desired velocities
                 vels_des[:, 0] -= 10 * np.sin(0.2 * t_batch)
                 accels = kp * (vels_des - vels)
-                p_diff = np.append(1.0e10, -np.diff(pos))
-                mask = p_diff < 6.0
-                accels[mask] -= k_brake * p_diff[mask]
-                accels[3] = 0.0  # Car 4 is controlled directly
+                accels[:, 1] -= k_brake * (pos[:, 0] - pos[:, 1]) * ((pos[:, 0] - pos[:, 1]) < 6.0)
+                accels[:, 2] -= k_brake * (pos[:, 1] - pos[:, 2]) * ((pos[:, 1] - pos[:, 2]) < 6.0)
+                accels[:, 3] = 0.0  # Car 4's acceleration is controlled directly
+                accels[:, 4] -= k_brake * (pos[:, 2] - pos[:, 4]) * ((pos[:, 2] - pos[:, 4]) < 12.0)
 
                 # f(x)
                 f_x = np.zeros(state_batch.shape)
@@ -252,7 +256,7 @@ class DynamicsModel:
             raise Exception('Unknown dynamics')
         return obs
 
-    def append_transition(self, state_batch, u_batch, next_state_batch):
+    def append_transition(self, state_batch, u_batch, next_state_batch, t_batch=None):
         """Estimates the disturbance from the current dynamics transition and adds it to buffer.
 
         Parameters
@@ -263,6 +267,8 @@ class DynamicsModel:
             shape (n_u,) or (batch_size, n_u)
         next_state_batch : ndarray
             shape (n_s,) or (batch_size, n_s)
+        t_batch : ndarray, optional
+            shape (1,) or (batch_size, 1)
 
         Returns
         -------
@@ -278,7 +284,7 @@ class DynamicsModel:
 
         u_batch = np.expand_dims(u_batch, -1)  # for broadcasting batch matrix multiplication purposes
 
-        disturbance_batch = (next_state_batch - state_batch - self.env.dt * (self.get_f(state_batch) + (self.get_g(state_batch) @ u_batch).squeeze(-1))) / self.env.dt
+        disturbance_batch = (next_state_batch - state_batch - self.env.dt * (self.get_f(state_batch, t_batch) + (self.get_g(state_batch, t_batch) @ u_batch).squeeze(-1))) / self.env.dt
 
         # Append new data point (state, disturbance) to our dataset
         for i in range(state_batch.shape[0]):
