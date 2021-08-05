@@ -25,6 +25,9 @@ class CBFQPLayer:
             confidence parameter desired (2.0 corresponds to ~95% for example).
         """
 
+        # self.cbf_layer = self.build_cbf_layer()
+        self.device = torch.device("cuda" if args.cuda else "cpu")
+
         self.env = env
         self.u_min, self.u_max = self.get_control_bounds()
         self.gamma_b = gamma_b
@@ -41,9 +44,6 @@ class CBFQPLayer:
 
         self.action_dim = env.action_space.shape[0]
         self.num_ineq_constraints = self.num_cbfs + 2 * self.action_dim
-
-        # self.cbf_layer = self.build_cbf_layer()
-        self.device = torch.device("cuda" if args.cuda else "cpu")
 
     def build_cbf_layer(self):
         """Builds the CvxpyLayer CBF layer.
@@ -99,7 +99,7 @@ class CBFQPLayer:
         safe_action_batch = self.solve_qp(Ps, qs, Gs, hs)
         prCyan('Time to get constraints = {} - Time to solve QP = {} - time per qp = {} - batch_size = {} - device = {}'.format(build_qp_time - start_time, time() - build_qp_time, (time() - build_qp_time) / safe_action_batch.shape[0], Ps.shape[0], Ps.device))
         # The actual safe action is the cbf action + the nominal action
-        final_action = torch.clamp(action_batch + safe_action_batch, -1.0, 1.0)
+        final_action = torch.clamp(action_batch + safe_action_batch, self.u_min.repeat(action_batch.shape[0], 1), self.u_max.repeat(action_batch.shape[0], 1))
 
         return final_action if not expand_dims else final_action.squeeze(0)
 
@@ -126,7 +126,8 @@ class CBFQPLayer:
 
 
         Ghs = torch.cat((Gs, hs.unsqueeze(2)), -1)
-        Ghs_norm = torch.sum(torch.abs(Ghs), dim=2, keepdim=True)
+        # Ghs_norm = torch.sum(torch.abs(Ghs), dim=2, keepdim=True)
+        Ghs_norm = torch.max(torch.abs(Ghs), dim=2, keepdim=True)[0]
         Gs /= Ghs_norm
         hs = hs / Ghs_norm.squeeze(-1)
         # print('Ps = {}'.format(Ps))
@@ -146,11 +147,11 @@ class CBFQPLayer:
         #     sol = solve_qp(P, q, -G.T, -h)
         #     u_safe = sol[0][:-1]
         #     print('quadprog = {} eps = {}'.format(u_safe, sol[0][-1]))
-        #
-        #     sol = self.cbf_layer(torch.sqrt(Ps), qs, Gs, hs, solver_args={'solve_method': 'ECOS'})[0]  # CVXPYLAYER
+
+        # sol = self.cbf_layer(torch.sqrt(Ps), qs, Gs, hs, solver_args={'solve_method': 'ECOS'})[0]  # CVXPYLAYER
         sol = self.cbf_layer(Ps, qs, Gs, hs, solver_args={"check_Q_spd": False, "maxIter": 100000, "notImprovedLim": 10, "eps": 1e-4})
         safe_action_batch = sol[:, :-1]
-        #     print('qpth = {}'.format(safe_action_batch[0]))
+        # print('qpth = {}'.format(safe_action_batch[0]))
 
         return safe_action_batch
 
@@ -388,7 +389,7 @@ class CBFQPLayer:
             h[:, 1] = Lffh15 + (gamma_b + gamma_b) * h15_dot + gamma_b * gamma_b * h15 + torch.bmm(Lgfh15, action_batch).squeeze()
             G[:, 0, 0] = -Lgfh13.squeeze()
             G[:, 1, 0] = -Lgfh15.squeeze()
-            G[:, :self.num_cbfs, n_u] = -1  # for slack
+            G[:, :self.num_cbfs, n_u] = -2e2  # for slack
             ineq_constraint_counter += self.num_cbfs
 
             # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
@@ -428,8 +429,8 @@ class CBFQPLayer:
             max control input.
         """
 
-        u_min = torch.tensor(self.env.safe_action_space.low)
-        u_max = torch.tensor(self.env.safe_action_space.high)
+        u_min = torch.tensor(self.env.safe_action_space.low).to(self.device)
+        u_max = torch.tensor(self.env.safe_action_space.high).to(self.device)
 
         return u_min, u_max
 

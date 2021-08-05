@@ -211,11 +211,11 @@ class CascadeCBFLayer:
             h[1] = Lffh15 + (self.gamma_b + self.gamma_b) * h15_dot + self.gamma_b * self.gamma_b * h15 + Lgfh15 * u_nom
             G[0, 0] = -Lgfh13
             G[1, 0] = -Lgfh15
-            G[:2, n_u] = -1  # for slack
+            G[:2, n_u] = -2e2  # for slack
             ineq_constraint_counter += 2
 
             # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
-            P = np.diag([1.0, 1e5])
+            P = np.diag([0.1, 1e1])
             q = np.zeros(n_u + 1)
 
         else:
@@ -265,6 +265,12 @@ class CascadeCBFLayer:
         # print('q =\t {}'.format(q))
         # print('G =\t {}'.format(G))
         # print('h =\t {}'.format(h))
+
+        # Here we normalize G and h to stay consistent with what we do in CVXPYLAYER which often crashes with big #s
+        Gh = np.concatenate((G, np.expand_dims(h, 1)), 1)
+        Gh_norm = np.expand_dims(np.max(np.abs(Gh), axis=1), axis=1)
+        G /= Gh_norm
+        h = h / Gh_norm.squeeze(-1)
 
         try:
             sol = solve_qp(P, q, -G.T, -h)

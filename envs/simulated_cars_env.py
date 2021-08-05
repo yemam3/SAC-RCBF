@@ -183,7 +183,7 @@ if __name__ == "__main__":
         action_safe = cbf_wrapper.get_u_safe(random_action, obs, disturb_mean, disturb_std)
         obs, reward, done, info = env.step(random_action + action_safe)
         plt.xlim([pos[-1] - 5.0, pos[0] + 5.0])
-        plt.pause(0.1)
+        plt.pause(0.01)
         episode_reward += reward
 
 
