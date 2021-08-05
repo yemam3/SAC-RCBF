@@ -207,8 +207,8 @@ class CascadeCBFLayer:
             Lgfh15 = np.dot(dLfh15dx, g_x)
 
             # Inequality constraints (G[u, eps] <= h)
-            h[0] = Lffh13 + (self.gamma_b + self.gamma_b) * h13_dot + self.gamma_b * self.gamma_b * h13
-            h[1] = Lffh15 + (self.gamma_b + self.gamma_b) * h15_dot + self.gamma_b * self.gamma_b * h15
+            h[0] = Lffh13 + (self.gamma_b + self.gamma_b) * h13_dot + self.gamma_b * self.gamma_b * h13 + Lgfh13 * u_nom
+            h[1] = Lffh15 + (self.gamma_b + self.gamma_b) * h15_dot + self.gamma_b * self.gamma_b * h15 + Lgfh15 * u_nom
             G[0, 0] = -Lgfh13
             G[1, 0] = -Lgfh15
             G[:2, n_u] = -1  # for slack
@@ -269,6 +269,7 @@ class CascadeCBFLayer:
         try:
             sol = solve_qp(P, q, -G.T, -h)
             u_safe = sol[0][:-1]
+            print('quadprog = {} eps = {}'.format(u_safe, sol[0][-1]))
         except ValueError as e:
             print('P = {},\nq = {},\nG = {},\nh = {}.'.format(P, q, G, h))
             raise e

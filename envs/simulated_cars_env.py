@@ -16,7 +16,7 @@ class SimulatedCarsEnv(gym.Env):
 
         self.dynamics_mode = 'SimulatedCars'
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,))
-        self.safe_action_space = spaces.Box(low=-3.0, high=3.0, shape=(1,))
+        self.safe_action_space = spaces.Box(low=-5.0, high=5.0, shape=(1,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(10,))
         self.max_episode_steps = 160
         self.dt = 0.02

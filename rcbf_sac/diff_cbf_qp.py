@@ -7,8 +7,7 @@ from cvxpylayers.torch import CvxpyLayer
 from util import prRed
 from util import prCyan
 from time import time
-from qpth.qp import QPFunction
-from util import to_tensor
+from qpth.qp import QPFunction, QPSolvers
 
 
 class CBFQPLayer:
@@ -46,26 +45,26 @@ class CBFQPLayer:
         # self.cbf_layer = self.build_cbf_layer()
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
-    # def build_cbf_layer(self):
-    #     """Builds the CvxpyLayer CBF layer.
-    #
-    #     Returns
-    #     -------
-    #     cbf_qp_layer : cvxpylayers.torch.CvxpyLayer
-    #         CBF-based Safety layer
-    #     """
-    #
-    #     # Define and solve the CVXPY problem.
-    #     P_sqrt = cp.Parameter((self.action_dim + 1, self.action_dim + 1))
-    #     q = cp.Parameter((self.action_dim + 1))
-    #     G = cp.Parameter((self.num_cbfs + 2 * self.action_dim, self.action_dim + 1))
-    #     h = cp.Parameter((self.num_cbfs + 2 * self.action_dim))
-    #     x = cp.Variable(self.action_dim + 1)
-    #     prob = cp.Problem(cp.Minimize(0.5 * cp.sum_squares(P_sqrt @ x) + q.T @ x), [G @ x <= h])
-    #     assert prob.is_dpp()
-    #     cbf_qp_layer = CvxpyLayer(prob, parameters=[P_sqrt, q, G, h], variables=[x])
-    #
-    #     return cbf_qp_layer
+    def build_cbf_layer(self):
+        """Builds the CvxpyLayer CBF layer.
+
+        Returns
+        -------
+        cbf_qp_layer : cvxpylayers.torch.CvxpyLayer
+            CBF-based Safety layer
+        """
+
+        # Define and solve the CVXPY problem.
+        P_sqrt = cp.Parameter((self.action_dim + 1, self.action_dim + 1))
+        q = cp.Parameter((self.action_dim + 1))
+        G = cp.Parameter((self.num_cbfs + 2 * self.action_dim, self.action_dim + 1))
+        h = cp.Parameter((self.num_cbfs + 2 * self.action_dim))
+        x = cp.Variable(self.action_dim + 1)
+        prob = cp.Problem(cp.Minimize(0.5 * cp.sum_squares(P_sqrt @ x) + q.T @ x), [G @ x <= h])
+        assert prob.is_dpp()
+        cbf_qp_layer = CvxpyLayer(prob, parameters=[P_sqrt, q, G, h], variables=[x])
+
+        return cbf_qp_layer
 
     def get_safe_action(self, state_batch, action_batch, mean_pred_batch, sigma_batch):
         """
@@ -125,8 +124,34 @@ class CBFQPLayer:
             The solution of the qp without the last dimension (the slack).
         """
 
-        sol = self.cbf_layer(Ps, qs, Gs, hs, solver_args={"check_Q_spd": False, "maxIter": 10000})
+
+        Ghs = torch.cat((Gs, hs.unsqueeze(2)), -1)
+        Ghs_norm = torch.sum(torch.abs(Ghs), dim=2, keepdim=True)
+        Gs /= Ghs_norm
+        hs = hs / Ghs_norm.squeeze(-1)
+        # print('Ps = {}'.format(Ps))
+        # print('qs = {}'.format(qs))
+        # print('Gs = {}'.format(Gs))
+        # print('hs = {}'.format(hs))
+        # if(Ps.shape[0] == 1):
+        #     from quadprog import solve_qp
+        #     P = Ps[0].cpu().detach().numpy().astype(np.double)
+        #     q = qs[0].cpu().detach().numpy().astype(np.double).squeeze()
+        #     G = Gs[0].cpu().detach().numpy().astype(np.double)
+        #     h = hs.cpu().detach().numpy().astype(np.double).squeeze()
+        #     print('P = {}'.format(P))
+        #     print('q = {}'.format(q))
+        #     print('G = {}'.format(G))
+        #     print('h = {}'.format(h))
+        #     sol = solve_qp(P, q, -G.T, -h)
+        #     u_safe = sol[0][:-1]
+        #     print('quadprog = {} eps = {}'.format(u_safe, sol[0][-1]))
+        #
+        #     sol = self.cbf_layer(torch.sqrt(Ps), qs, Gs, hs, solver_args={'solve_method': 'ECOS'})[0]  # CVXPYLAYER
+        sol = self.cbf_layer(Ps, qs, Gs, hs, solver_args={"check_Q_spd": False, "maxIter": 100000, "notImprovedLim": 10, "eps": 1e-4})
         safe_action_batch = sol[:, :-1]
+        #     print('qpth = {}'.format(safe_action_batch[0]))
+
         return safe_action_batch
 
     def cbf_layer(self, Qs, ps, Gs, hs, As=None, bs=None, solver_args=None):
@@ -156,11 +181,9 @@ class CBFQPLayer:
         if As is None or bs is None:
             As = torch.Tensor().to(self.device).double()
             bs = torch.Tensor().to(self.device).double()
-        # Normalize Constraints
-        # Gs_norm = torch.sqrt(torch.sum(Gs**2, dim=2, keepdim=True))
-        # Gs /= Gs_norm
-        # hs = hs / Gs_norm.squeeze(-1)
-        result = QPFunction(verbose=-1, **solver_args)(Qs.double(), ps.double(), Gs.double(), hs.double(), As, bs).float()
+
+        result = QPFunction(verbose=0, **solver_args)(Qs.double(), ps.double(), Gs.double(), hs.double(), As, bs).float()
+
         if torch.any(torch.isnan(result)):
             prRed('QP Failed to solve - result is nan == {}!'.format(torch.any(torch.isnan(result))))
             raise Exception('QP Failed to solve')
@@ -344,19 +367,32 @@ class CBFQPLayer:
             Lffh15 = torch.bmm(dLfh15dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1)).squeeze()
 
             # Lfgh1
-            Lgfh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), g_x).squeeze()
-            Lgfh15 = torch.bmm(dLfh15dx.view(batch_size, 1, -1), g_x).squeeze()
+            Lgfh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), g_x)
+            Lgfh15 = torch.bmm(dLfh15dx.view(batch_size, 1, -1), g_x)
+
+            # print('state = {}'.format(state_batch))
+            # print('f_x = {}'.format(f_x))
+            # print('g_x = {}'.format(g_x))
+            # print('h13 = {}'.format(h13))
+            # print('h15 = {}'.format(h15))
+            # print('gamma_b = {}'.format(self.gamma_b))
+            # print('h13_dot = {}'.format(h13_dot))
+            # print('h15_dot = {}'.format(h15_dot))
+            # print('Lffh13 = {}'.format(Lffh13))
+            # print('Lffh15 = {}'.format(Lffh15))
+            # print('Lgfh13 = {}'.format(Lgfh13))
+            # print('Lgfh15 = {}'.format(Lgfh15))
 
             # Inequality constraints (G[u, eps] <= h)
-            h[:, 0] = Lffh13 + (gamma_b + gamma_b) * h13_dot + gamma_b * gamma_b * h13
-            h[:, 1] = Lffh15 + (gamma_b + gamma_b) * h15_dot + gamma_b * gamma_b * h15
-            G[:, 0, 0] = -Lgfh13
-            G[:, 1, 0] = -Lgfh15
+            h[:, 0] = Lffh13 + (gamma_b + gamma_b) * h13_dot + gamma_b * gamma_b * h13 + torch.bmm(Lgfh13, action_batch).squeeze()
+            h[:, 1] = Lffh15 + (gamma_b + gamma_b) * h15_dot + gamma_b * gamma_b * h15 + torch.bmm(Lgfh15, action_batch).squeeze()
+            G[:, 0, 0] = -Lgfh13.squeeze()
+            G[:, 1, 0] = -Lgfh15.squeeze()
             G[:, :self.num_cbfs, n_u] = -1  # for slack
             ineq_constraint_counter += self.num_cbfs
 
             # Let's also build the cost matrices, vectors to minimize control effort and penalize slack
-            P = torch.diag(torch.tensor([1.0, 1e5])).repeat(batch_size, 1, 1).to(self.device)
+            P = torch.diag(torch.tensor([0.1, 1e1])).repeat(batch_size, 1, 1).to(self.device)
             q = torch.zeros((batch_size, n_u + 1)).to(self.device)
 
         else:

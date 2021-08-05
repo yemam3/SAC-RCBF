@@ -192,8 +192,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
     # Environment Args
-    parser.add_argument('--env-name', default="SafetyGym", help='Options are Unicycle or SafetyGym')
-    parser.add_argument('--robot_xml', default='xmls/point.xml', help="SafetyGym Currently only supporting xmls/point.xml")
+    parser.add_argument('--env-name', default="SimulatedCars", help='Options are Unicycle or SafetyGym')
     parser.add_argument('--log_comet', action='store_true', dest='log_comet', help="Whether to log data")
     # SAC Args
     parser.add_argument('--mode', default='train', type=str, help='support option: train/test')
@@ -238,10 +237,10 @@ if __name__ == "__main__":
     # CBF, Dynamics, Env Args
     parser.add_argument('--no_diff_qp', action='store_false', dest='diff_qp', help='Should the agent diff through the CBF?')
     parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
-    parser.add_argument('--k_d', default=3.0, type=float)
-    parser.add_argument('--gamma_b', default=100, type=float)
+    parser.add_argument('--k_d', default=2.0, type=float)
+    parser.add_argument('--gamma_b', default=50, type=float)
     parser.add_argument('--l_p', default=0.03, type=float,
-                        help="Point Robot only: Look-ahead distance for unicycle dynamics output.")
+                        help="Look-ahead distance for unicycle dynamics output.")
     # Model Based Learning
     parser.add_argument('--model_based', action='store_true', dest='model_based', help='If selected, will use data from the model to train the RL agent.')
     parser.add_argument('--real_ratio', default=0.3, type=float, help='Portion of data obtained from real replay buffer for training.')
