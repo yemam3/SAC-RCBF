@@ -106,7 +106,7 @@ def train(agent, cbf_wrapper, env, dynamics_model, args, experiment=None):
 
             # Ignore the "done" signal if it comes from hitting the time horizon.
             # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
-            mask = 1 if episode_steps == env._max_episode_steps else float(not done)
+            mask = 1 if episode_steps == env.max_episode_steps else float(not done)
 
             memory.push(obs, action + action_comp + action_safe, reward, next_obs, mask)  # Append transition to memory
 
