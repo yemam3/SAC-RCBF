@@ -79,10 +79,10 @@ class DynamicsModel:
 
         expand_dims = len(state_batch.shape) == 1
         if expand_dims:
-            state_batch = np.expand_dims(state_batch, dim=0)
+            state_batch = np.expand_dims(state_batch, axis=0)
 
         # Start with our prior for continuous time system x' = f(x) + g(x)u
-        if t_batch:
+        if t_batch is not None:
             next_state_batch = state_batch + self.env.dt * (self.get_f(state_batch, t_batch) + (self.get_g(state_batch, t_batch) @ np.expand_dims(u_batch, -1)).squeeze(-1))
         else:
             next_state_batch = state_batch + self.env.dt * (self.get_f(state_batch) + (self.get_g(state_batch) @ np.expand_dims(u_batch, -1)).squeeze(-1))
@@ -98,7 +98,7 @@ class DynamicsModel:
             if pred_std is not None:
                 pred_std = pred_std.squeeze(0)
 
-        if t_batch:
+        if t_batch is not None:
             next_t_batch = t_batch + self.env.dt
             return next_state_batch, self.env.dt * pred_std, next_t_batch
 
