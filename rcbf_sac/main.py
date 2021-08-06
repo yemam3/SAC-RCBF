@@ -51,7 +51,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
 
             # Generate Model rollouts
             if args.model_based and len(memory) > 0:
-                memory_model = generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, env.unwrapped.goal_pos[:2],
+                memory_model = generate_model_rollouts(env, memory_model, memory, agent, dynamics_model,
                                                        k_horizon=args.k_horizon,
                                                        batch_size=min(len(memory), args.rollout_batch_size),
                                                        warmup=args.start_steps > total_numsteps)

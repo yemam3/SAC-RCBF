@@ -3,7 +3,7 @@ from copy import deepcopy
 from util import euler_to_mat_2d, prCyan, prRed
 
 
-def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, goal_loc, k_horizon=1, batch_size=20, warmup=False):
+def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, k_horizon=1, batch_size=20, warmup=False):
 
     def policy(observation):
 
@@ -41,7 +41,7 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, go
 
             # Construct Next Observation from State
             dist2goal_prev = -np.log(obs_batch_[:, -1])
-            goal_rel = goal_loc - next_obs_batch_[:, :2]
+            goal_rel = env.unwrapped.goal_pos[:2] - next_obs_batch_[:, :2]
             dist2goal = np.linalg.norm(goal_rel, axis=1)
             assert dist2goal.shape == (batch_size_,), 'dist2goal should be a vector of size (batch_size,), got {} instead'.format(dist2goal.shape)
             # generate compass
