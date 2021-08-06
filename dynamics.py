@@ -91,7 +91,7 @@ class DynamicsModel:
             pred_mean, pred_std = self.predict_disturbance(state_batch)
             next_state_batch += self.env.dt * pred_mean
         else:
-            pred_std = None
+            pred_std = np.zeros(state_batch.shape)
 
         if expand_dims:
             next_state_batch = next_state_batch.squeeze(0)

@@ -16,7 +16,7 @@ class SimulatedCarsEnv(gym.Env):
 
         self.dynamics_mode = 'SimulatedCars'
         self.action_space = spaces.Box(low=-2.0, high=2.0, shape=(1,))
-        self.safe_action_space = spaces.Box(low=-10.0, high=10.0, shape=(1,))
+        self.safe_action_space = spaces.Box(low=-5.0, high=5.0, shape=(1,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(10,))
         self.max_episode_steps = 160
         self.dt = 0.02
@@ -70,7 +70,7 @@ class SimulatedCarsEnv(gym.Env):
 
         self.state += self.dt * (f_x + g_x * action)
 
-        self.t = self.t + 0.05  # time
+        self.t = self.t + self.dt  # time
 
         self.episode_step += 1  # steps in episode
 
@@ -170,6 +170,7 @@ if __name__ == "__main__":
     obs = env.reset()
     done = False
     episode_reward = 0
+    episode_step = 0
 
     # Plot initial state
     p_pos = plt.scatter(obs[::2], np.zeros(5), marker='s', s=13*60, cmap='Accent', c=list(range(5)))
@@ -185,11 +186,17 @@ if __name__ == "__main__":
         random_action = env.action_space.sample()
         disturb_mean, disturb_std = dynamics_model.predict_disturbance(obs)
         action_safe = cbf_wrapper.get_u_safe(random_action, obs, disturb_mean, disturb_std)
+        # Predict next state (testing for model-based rollouts)
+        # Note that in this env, obs and state are the same but that's not always the case!
+        next_state, next_state_std, _ = dynamics_model.predict_next_state(obs, random_action + action_safe, t_batch=np.array([env.dt * episode_step]), use_gps=False)
+        # Take Environment Action
         obs, reward, done, info = env.step(random_action + action_safe)
+        # Check that our dynamics model works properly
+        assert np.sum(np.abs(next_state - obs)) < 1e-3, 'Predicted and Actual Next States are not the same!\nPredicted: {} \nActual: {}'.format(next_state, obs)
         plt.xlim([pos[-1] - 5.0, pos[0] + 5.0])
         plt.pause(0.01)
         episode_reward += reward
-
-
+        episode_step += 1
         print('episode_reward = {}'.format(episode_reward))
+
     plt.show()
