@@ -168,7 +168,7 @@ class CascadeCBFLayer:
             accels[1] -= self.env.k_brake * (pos[0] - pos[1]) * ((pos[0] - pos[1]) < 6.0)
             accels[2] -= self.env.k_brake * (pos[1] - pos[2]) * ((pos[1] - pos[2]) < 6.0)
             accels[3] = 0.0  # Car 4's acceleration is controlled directly
-            accels[4] -= self.env.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 12.0)
+            accels[4] -= self.env.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 13.0)
 
             # f(x)
             f_x = np.zeros(state.shape[0])

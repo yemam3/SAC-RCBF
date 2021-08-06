@@ -16,7 +16,7 @@ class SimulatedCarsEnv(gym.Env):
 
         self.dynamics_mode = 'SimulatedCars'
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,))
-        self.safe_action_space = spaces.Box(low=-20.0, high=20.0, shape=(1,))
+        self.safe_action_space = spaces.Box(low=-10.0, high=10.0, shape=(1,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(10,))
         self.max_episode_steps = 160
         self.dt = 0.02
@@ -58,7 +58,7 @@ class SimulatedCarsEnv(gym.Env):
         accels[1] -= self.k_brake * (pos[0] - pos[1]) * ((pos[0] - pos[1]) < 6.0)
         accels[2] -= self.k_brake * (pos[1] - pos[2]) * ((pos[1] - pos[2]) < 6.0)
         accels[3] = 0.0  # Car 4's acceleration is controlled directly
-        accels[4] -= self.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 12.0)
+        accels[4] -= self.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 13.0)
 
         # Determine action of each car
         f_x = np.zeros(10)

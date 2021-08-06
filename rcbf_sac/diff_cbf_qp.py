@@ -190,7 +190,7 @@ class CBFQPLayer:
             raise Exception('QP Failed to solve')
         return result
 
-    def get_cbf_qp_constraints(self, state_batch, action_batch, mean_pred_batch, sigma_pred_batch, gamma_b=100.0):
+    def get_cbf_qp_constraints(self, state_batch, action_batch, mean_pred_batch, sigma_pred_batch):
         """Build up matrices required to solve qp
         Program specifically solves:
             minimize_{u,eps} 0.5 * u^T P u + q^T u
@@ -238,6 +238,7 @@ class CBFQPLayer:
                                                 sigma_pred_batch.shape)
 
         batch_size = state_batch.shape[0]
+        gamma_b = self.gamma_b
 
         # Expand dims
         state_batch = torch.unsqueeze(state_batch, -1)
@@ -333,7 +334,7 @@ class CBFQPLayer:
             accels[:, 1] -= self.env.k_brake * (pos[:, 0] - pos[:, 1]) * ((pos[:, 0] - pos[:, 1]) < 6.0)
             accels[:, 2] -= self.env.k_brake * (pos[:, 1] - pos[:, 2]) * ((pos[:, 1] - pos[:, 2]) < 6.0)
             accels[:, 3] = 0.0  # Car 4's acceleration is controlled directly
-            accels[:, 4] -= self.env.k_brake * (pos[:, 2] - pos[:, 4]) * ((pos[:, 2] - pos[:, 4]) < 12.0)
+            accels[:, 4] -= self.env.k_brake * (pos[:, 2] - pos[:, 4]) * ((pos[:, 2] - pos[:, 4]) < 13.0)
 
             # f(x)
             f_x = torch.zeros((state_batch.shape[0], state_batch.shape[1])).to(self.device)
