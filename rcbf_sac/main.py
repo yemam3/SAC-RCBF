@@ -146,7 +146,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
             print('Size of replay buffers: real : {}, \t\t model : {}'.format(len(memory), len(memory_model)))
             avg_reward = 0.
             avg_cost = 0.
-            episodes = 10
+            episodes = 5
             for _ in range(episodes):
                 obs = env.reset()
                 episode_reward = 0
