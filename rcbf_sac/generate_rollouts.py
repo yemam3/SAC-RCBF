@@ -63,13 +63,8 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, go
         elif env.dynamics_mode == 'SimulatedCars':
 
             # Compute Reward
-            car_4_pos = next_obs_batch_[:, 6]  # car's 4 position
             car_4_vel = next_obs_batch_[:, 7]  # car's 4 velocity
             reward_batch_ = -np.abs(car_4_vel) * np.abs(action_batch_) * (action_batch_ > 0) / env.max_episode_steps
-            if (next_obs_batch_[:, 4] - car_4_pos) < 2.99:  # How far is car 3?
-                reward_batch_ -= np.abs(500 / (next_obs_batch_[:, 4] - car_4_pos))
-            if (car_4_pos - next_obs_batch_[8]) < 2.99:  # How far is car 4?
-                reward_batch_ -= np.abs(500 / (car_4_pos - next_obs_batch_[:, 8]))
 
             # Compute Done
             done_batch_ = next_t_batch_ >= env.max_episode_steps * env.dt  # done?

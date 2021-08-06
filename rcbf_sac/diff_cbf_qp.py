@@ -31,14 +31,14 @@ class CBFQPLayer:
         self.env = env
         self.u_min, self.u_max = self.get_control_bounds()
         self.gamma_b = gamma_b
-        self.k_d = k_d
-        self.l_p = l_p
 
         if self.env.dynamics_mode not in DYNAMICS_MODE:
             raise Exception('Dynamics mode not supported.')
 
         if self.env.dynamics_mode == 'Unicycle':
             self.num_cbfs = len(env.hazards_locations)
+            self.k_d = k_d
+            self.l_p = l_p
         elif self.env.dynamics_mode == 'SimulatedCars':
             self.num_cbfs = 2
 

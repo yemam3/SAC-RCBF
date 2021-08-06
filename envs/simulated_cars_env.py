@@ -15,7 +15,7 @@ class SimulatedCarsEnv(gym.Env):
         super(SimulatedCarsEnv, self).__init__()
 
         self.dynamics_mode = 'SimulatedCars'
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,))
+        self.action_space = spaces.Box(low=-2.0, high=2.0, shape=(1,))
         self.safe_action_space = spaces.Box(low=-10.0, high=10.0, shape=(1,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(10,))
         self.max_episode_steps = 160
@@ -76,24 +76,28 @@ class SimulatedCarsEnv(gym.Env):
 
         done = self.episode_step >= self.max_episode_steps  # done?
 
-        info = {}
+        info = {'cost': self._get_cost(), 'goal_met': False}  # Goal is never met since we're driving into the sunset
 
         return self._get_obs(), self._get_reward(action[0]), done, info
 
     def _get_reward(self, action):
 
-        car_4_pos = self.state[6]  # car's 4 position
         car_4_vel = self.state[7]  # car's 4 velocity
 
-        r = - np.abs(car_4_vel) * np.abs(action) * (action > 0) / self.max_episode_steps
+        return - np.abs(car_4_vel) * np.abs(action) * (action > 0) / self.max_episode_steps
+
+    def _get_cost(self):
+
+        car_4_pos = self.state[6]  # car's 4 position
+        cost = 0
 
         if (self.state[4] - car_4_pos) < 2.99:  # How far is car 3?
-            r -= np.abs(500 / (self.state[4] - car_4_pos))
+            cost -= 0.1
 
         if (car_4_pos - self.state[8]) < 2.99:  # How far is car 4?
-            r -= np.abs(500 / (car_4_pos - self.state[8]))
+            cost -= 0.1
 
-        return r
+        return cost
 
     def reset(self):
         """ Reset the state of the environment to an initial state.
