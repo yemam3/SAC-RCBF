@@ -57,7 +57,7 @@ def run_random(args):
         # action_safe = np.array([0.0, 0.0])
 
         # Get confidence intervals
-        next_state_pred, next_state_std = dynamics_model.predict_next_state(state, action + action_safe)
+        next_state_pred, next_state_std, _ = dynamics_model.predict_next_state(state, action + action_safe)
         next_state_lci_pred = next_state_pred - args.k_d * next_state_std
         next_state_uci_pred = next_state_pred + args.k_d * next_state_std
 

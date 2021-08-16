@@ -102,7 +102,7 @@ class DynamicsModel:
             next_t_batch = t_batch + self.env.dt
             return next_state_batch, self.env.dt * pred_std, next_t_batch
 
-        return next_state_batch, self.env.dt * pred_std
+        return next_state_batch, self.env.dt * pred_std, t_batch
 
     def predict_next_obs(self, state, u):
         """Predicts the next observation given the state and u. Note that this only predicts the mean next observation.

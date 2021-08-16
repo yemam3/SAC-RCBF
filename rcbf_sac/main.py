@@ -104,7 +104,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
             # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
             mask = 1 if episode_steps == env.max_episode_steps else float(not done)
 
-            memory.push(obs, action, reward, next_obs, mask)  # Append transition to memory
+            memory.push(obs, action, reward, next_obs, mask, t=episode_steps * env.dt, next_t=(episode_steps+1) * env.dt)  # Append transition to memory
 
             # Update state and store transition for GP model learning
             next_state = dynamics_model.get_state(next_obs)

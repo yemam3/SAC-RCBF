@@ -15,14 +15,11 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, k_
         return action
 
     # Sample a batch from memory
-    if memory.store_t:
-        obs_batch, action_batch, reward_batch, next_obs_batch, mask_batch, t_batch, next_t_batch = memory.sample(batch_size=batch_size)
-        t_batch_ = deepcopy(t_batch)
-    else:
-        obs_batch, action_batch, reward_batch, next_obs_batch, mask_batch = memory.sample(batch_size=batch_size)
+    obs_batch, action_batch, reward_batch, next_obs_batch, mask_batch, t_batch, next_t_batch = memory.sample(batch_size=batch_size)
 
     obs_batch_ = deepcopy(obs_batch)
     done_batch_ = [False for _ in range(batch_size)]
+    t_batch_ = deepcopy(t_batch)
 
     for k in range(k_horizon):
 
@@ -30,10 +27,7 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, k_
 
         action_batch_ = policy(obs_batch_)
         state_batch_ = dynamics_model.get_state(obs_batch_)
-        if memory.store_t:
-            next_state_mu_, next_state_std_, next_t_batch_ = dynamics_model.predict_next_state(state_batch_, action_batch_, t_batch=t_batch)
-        else:
-            next_state_mu_, next_state_std_ = dynamics_model.predict_next_state(state_batch_, action_batch_)
+        next_state_mu_, next_state_std_, next_t_batch_ = dynamics_model.predict_next_state(state_batch_, action_batch_, t_batch=t_batch)
         next_state_batch_ = np.random.normal(next_state_mu_, next_state_std_)
         next_obs_batch_ = dynamics_model.get_obs(next_state_batch_)
 
@@ -64,19 +58,17 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, k_
 
             # Compute Reward
             car_4_vel = next_obs_batch_[:, 7]  # car's 4 velocity
-            reward_batch_ = -np.abs(car_4_vel) * np.abs(action_batch_) * (action_batch_ > 0) / env.max_episode_steps
+            reward_batch_ = -np.abs(car_4_vel) * np.abs(action_batch_.squeeze()) * (action_batch_.squeeze() > 0) / env.max_episode_steps
 
             # Compute Done
             done_batch_ = next_t_batch_ >= env.max_episode_steps * env.dt  # done?
+            mask_batch_ = np.invert(done_batch_)
 
         else:
             raise Exception('Environment/Dynamics mode {} not Recognized!'.format(env.dynamics_mode))
 
-        if memory.store_t:
-            memory_model.batch_push(obs_batch_, action_batch_, reward_batch_, next_obs_batch_, mask_batch_, t_batch_, next_t_batch_)  # Append transition to memory
-            t_batch_ = deepcopy(next_t_batch_)
-        else:
-            memory_model.batch_push(obs_batch_, action_batch_, reward_batch_, next_obs_batch_, mask_batch_)  # Append transition to memory
+        memory_model.batch_push(obs_batch_, action_batch_, reward_batch_, next_obs_batch_, mask_batch_, t_batch_, next_t_batch_)  # Append transition to memory
+        t_batch_ = deepcopy(next_t_batch_)
 
         # Update Current Observation Batch
         obs_batch_ = deepcopy(next_obs_batch_)
@@ -84,7 +76,7 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, k_
         # Delete Done Trajectories
         # prCyan('batch_size before omission = {}'.format(obs_batch_.shape))
         if np.sum(done_batch_) > 0:
-            print('reached_goal = {}'.format(done_batch_))
+            # print('reached_goal = {}'.format(done_batch_))
             obs_batch_ = np.delete(obs_batch_, done_batch_ > 0, axis=0)
         # prCyan('batch_size after omission = {}, #dones = {}'.format(obs_batch_.shape, np.sum(done_batch_)))
 

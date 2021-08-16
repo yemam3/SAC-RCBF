@@ -110,8 +110,8 @@ class RCBF_SAC(object):
 
         # Model-based vs regular RL
         if memory_model and real_ratio:
-            state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=int(real_ratio*batch_size))
-            state_batch_m, action_batch_m, reward_batch_m, next_state_batch_m, mask_batch_m = memory_model.sample(
+            state_batch, action_batch, reward_batch, next_state_batch, mask_batch, t_batch, next_t_batch = memory.sample(batch_size=int(real_ratio*batch_size))
+            state_batch_m, action_batch_m, reward_batch_m, next_state_batch_m, mask_batch_m, t_batch_m, next_t_batch_m = memory_model.sample(
                 batch_size=int((1-real_ratio) * batch_size))
             state_batch = np.vstack((state_batch, state_batch_m))
             action_batch = np.vstack((action_batch, action_batch_m))
@@ -119,7 +119,7 @@ class RCBF_SAC(object):
             next_state_batch = np.vstack((next_state_batch, next_state_batch_m))
             mask_batch = np.hstack((mask_batch, mask_batch_m))
         else:
-            state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+            state_batch, action_batch, reward_batch, next_state_batch, mask_batch, t_batch, next_t_batch = memory.sample(batch_size=batch_size)
 
         state_batch = torch.FloatTensor(state_batch).to(self.device)
         next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
