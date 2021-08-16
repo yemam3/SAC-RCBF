@@ -2,7 +2,6 @@
 from comet_ml import Experiment
 
 import argparse
-import itertools
 import torch
 import numpy as np
 
@@ -30,7 +29,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
     if args.use_comp:
         compensator_rollouts = []
 
-    for i_episode in itertools.count(1):
+    for i_episode in range(args.max_episodes):
         episode_reward = 0
         episode_cost = 0
         episode_steps = 0
@@ -112,11 +111,6 @@ def train(agent, env, dynamics_model, args, experiment=None):
                 # TODO: Clean up line below, specifically (t_batch)
                 dynamics_model.append_transition(state, action, next_state, t_batch=np.array([episode_steps*env.dt]))
 
-            # [optional] save intermediate model
-            if total_numsteps % int(args.num_steps / 10) == 0:
-                agent.save_model(args.output)
-                dynamics_model.save_disturbance_models(args.output)
-
             # append comp rollout with step before updating
             if args.use_comp:
                 episode_rollout['obs'] = np.vstack((episode_rollout['obs'], obs))
@@ -130,8 +124,10 @@ def train(agent, env, dynamics_model, args, experiment=None):
             compensator_rollouts.append(episode_rollout)
             agent.update_parameters_compensator(compensator_rollouts)
 
-        if total_numsteps > args.num_steps:
-            break
+        # [optional] save intermediate model
+        if i_episode % int(args.max_episodes / 10) == 0:
+            agent.save_model(args.output)
+            dynamics_model.save_disturbance_models(args.output)
 
         if experiment:
             # Comet.ml logging
@@ -217,7 +213,7 @@ if __name__ == "__main__":
                         help='random seed (default: 12345)')
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='batch size (default: 256)')
-    parser.add_argument('--num_steps', type=int, default=200001, metavar='N',
+    parser.add_argument('--max_episodes', type=int, default=300, metavar='N',
                         help='maximum number of steps (default: 1000000)')
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')

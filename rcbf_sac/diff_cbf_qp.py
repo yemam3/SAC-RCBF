@@ -341,6 +341,10 @@ class CBFQPLayer:
             f_x[:, ::2] = vels
             f_x[:, 1::2] = accels
 
+            # f_D(x) - disturbance in the drift dynamics
+            fD_x = torch.zeros((state_batch.shape[0], state_batch.shape[1])).to(self.device)
+            fD_x[:, 1::2] = sigma_pred_batch[:, 1::2, 0].squeeze(-1)
+
             # g(x)
             g_x = torch.zeros((state_batch.shape[0], state_batch.shape[1], 1)).to(self.device)
             g_x[:, 7, 0] = 50.0  # Car 4's acceleration
@@ -360,6 +364,7 @@ class CBFQPLayer:
             dLfh13dx[:, 6] = (vels[:, 3] - vels[:, 2])
             dLfh13dx[:, 7] = (pos[:, 3] - pos[:, 2])
             Lffh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1)).squeeze()
+            LfDfh13 = torch.bmm(torch.abs(dLfh13dx.view(batch_size, 1, -1)), fD_x.view(batch_size, -1, 1)).squeeze()
 
             dLfh15dx = torch.zeros((batch_size, 10)).to(self.device)
             dLfh15dx[:, 8] = (vels[:, 4] - vels[:, 3])  # Car 5 pos
@@ -367,6 +372,7 @@ class CBFQPLayer:
             dLfh15dx[:, 6] = (vels[:, 3] - vels[:, 4])
             dLfh15dx[:, 7] = (pos[:, 3] - pos[:, 4])
             Lffh15 = torch.bmm(dLfh15dx.view(batch_size, 1, -1), f_x.view(batch_size, -1, 1)).squeeze()
+            LfDfh15 = torch.bmm(torch.abs(dLfh15dx.view(batch_size, 1, -1)), fD_x.view(batch_size, -1, 1)).squeeze()
 
             # Lfgh1
             Lgfh13 = torch.bmm(dLfh13dx.view(batch_size, 1, -1), g_x)
@@ -386,8 +392,8 @@ class CBFQPLayer:
             # print('Lgfh15 = {}'.format(Lgfh15))
 
             # Inequality constraints (G[u, eps] <= h)
-            h[:, 0] = Lffh13 + (gamma_b + gamma_b) * h13_dot + gamma_b * gamma_b * h13 + torch.bmm(Lgfh13, action_batch).squeeze()
-            h[:, 1] = Lffh15 + (gamma_b + gamma_b) * h15_dot + gamma_b * gamma_b * h15 + torch.bmm(Lgfh15, action_batch).squeeze()
+            h[:, 0] = Lffh13 - LfDfh13 + (gamma_b + gamma_b) * h13_dot + gamma_b * gamma_b * h13 + torch.bmm(Lgfh13, action_batch).squeeze()
+            h[:, 1] = Lffh15 - LfDfh15 + (gamma_b + gamma_b) * h15_dot + gamma_b * gamma_b * h15 + torch.bmm(Lgfh15, action_batch).squeeze()
             G[:, 0, 0] = -Lgfh13.squeeze()
             G[:, 1, 0] = -Lgfh15.squeeze()
             G[:, :self.num_cbfs, n_u] = -2e2  # for slack

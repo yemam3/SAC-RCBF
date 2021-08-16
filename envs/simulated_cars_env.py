@@ -29,6 +29,10 @@ class SimulatedCarsEnv(gym.Env):
         self.t = 0  # Time
         self.episode_step = 0  # Episode Step
 
+        # Gaussian Noise Parameters on the accelerations of the other vehicles
+        self.disturb_mean = np.zeros((1,))
+        self.disturb_covar = np.diag([0.05])
+
         self.reset()
 
     def step(self, action):
@@ -55,17 +59,18 @@ class SimulatedCarsEnv(gym.Env):
         vels_des = 30.0 * np.ones(5)  # Desired velocities
         vels_des[0] -= 10*np.sin(0.2*self.t)
         accels = self.kp * (vels_des - vels)
-        accels[1] -= self.k_brake * (pos[0] - pos[1]) * ((pos[0] - pos[1]) < 6.0)
-        accels[2] -= self.k_brake * (pos[1] - pos[2]) * ((pos[1] - pos[2]) < 6.0)
-        accels[3] = 0.0  # Car 4's acceleration is controlled directly
-        accels[4] -= self.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 13.0)
+        accels[0] += np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
+        accels[1] += -self.k_brake * (pos[0] - pos[1]) * ((pos[0] - pos[1]) < 6.0) + np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
+        accels[2] += -self.k_brake * (pos[1] - pos[2]) * ((pos[1] - pos[2]) < 6.0) + np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
+        accels[3] = np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()  # Car 4's acceleration is controlled directly
+        accels[4] += -self.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 13.0) + np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
 
         # Determine action of each car
         f_x = np.zeros(10)
         g_x = np.zeros(10)
 
         f_x[::2] = vels  # Derivatives of positions are velocities
-        f_x[1::2] = accels  # Derivatives of velocities are acceleration
+        f_x[1::2] = accels # Derivatives of velocities are acceleration
         g_x[7] = 50.0  # Car 4's acceleration (idx = 2*4 - 1) is the control input
 
         self.state += self.dt * (f_x + g_x * action)
@@ -191,8 +196,6 @@ if __name__ == "__main__":
         next_state, next_state_std, _ = dynamics_model.predict_next_state(obs, random_action + action_safe, t_batch=np.array([env.dt * episode_step]), use_gps=False)
         # Take Environment Action
         obs, reward, done, info = env.step(random_action + action_safe)
-        # Check that our dynamics model works properly
-        assert np.sum(np.abs(next_state - obs)) < 1e-3, 'Predicted and Actual Next States are not the same!\nPredicted: {} \nActual: {}'.format(next_state, obs)
         plt.xlim([pos[-1] - 5.0, pos[0] + 5.0])
         plt.pause(0.01)
         episode_reward += reward
