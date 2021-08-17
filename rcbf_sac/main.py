@@ -213,13 +213,13 @@ if __name__ == "__main__":
                         help='random seed (default: 12345)')
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='batch size (default: 256)')
-    parser.add_argument('--max_episodes', type=int, default=300, metavar='N',
+    parser.add_argument('--max_episodes', type=int, default=400, metavar='N',
                         help='maximum number of steps (default: 1000000)')
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
     parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
                         help='model updates per simulator step (default: 1)')
-    parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
+    parser.add_argument('--start_steps', type=int, default=5000, metavar='N',
                         help='Steps sampling random actions (default: 10000)')
     parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
                         help='Value target update per no. of updates per step (default: 1)')
@@ -233,8 +233,8 @@ if __name__ == "__main__":
     # CBF, Dynamics, Env Args
     parser.add_argument('--no_diff_qp', action='store_false', dest='diff_qp', help='Should the agent diff through the CBF?')
     parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
-    parser.add_argument('--k_d', default=2.0, type=float)
-    parser.add_argument('--gamma_b', default=50, type=float)
+    parser.add_argument('--k_d', default=3.0, type=float)
+    parser.add_argument('--gamma_b', default=20, type=float)
     parser.add_argument('--l_p', default=0.03, type=float,
                         help="Look-ahead distance for unicycle dynamics output.")
     # Model Based Learning

@@ -15,10 +15,10 @@ class SimulatedCarsEnv(gym.Env):
         super(SimulatedCarsEnv, self).__init__()
 
         self.dynamics_mode = 'SimulatedCars'
-        self.action_space = spaces.Box(low=-2.0, high=2.0, shape=(1,))
-        self.safe_action_space = spaces.Box(low=-5.0, high=5.0, shape=(1,))
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,))
+        self.safe_action_space = spaces.Box(low=-10.0, high=10.0, shape=(1,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(10,))
-        self.max_episode_steps = 160
+        self.max_episode_steps = 200
         self.dt = 0.02
 
         # Gains
@@ -89,7 +89,8 @@ class SimulatedCarsEnv(gym.Env):
 
         car_4_vel = self.state[7]  # car's 4 velocity
 
-        return - np.abs(car_4_vel) * np.abs(action) * (action > 0) / self.max_episode_steps
+        # return -np.abs(car_4_vel) * np.abs(action) * (action > 0) / self.max_episode_steps
+        return -5.0 * np.abs(action) / self.max_episode_steps
 
     def _get_cost(self):
 
@@ -161,10 +162,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env-name', default="SafetyGym", help='Either SafetyGym or Unicycle.')
     parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
-    parser.add_argument('--k_d', default=2.0, type=float)
-    parser.add_argument('--gamma_b', default=50, type=float)
+    parser.add_argument('--k_d', default=3.0, type=float)
+    parser.add_argument('--gamma_b', default=20, type=float)
     parser.add_argument('--cuda', action="store_true", help='run on CUDA (default: False)')
     args = parser.parse_args()
 
@@ -196,10 +196,11 @@ if __name__ == "__main__":
         next_state, next_state_std, _ = dynamics_model.predict_next_state(obs, random_action + action_safe, t_batch=np.array([env.dt * episode_step]), use_gps=False)
         # Take Environment Action
         obs, reward, done, info = env.step(random_action + action_safe)
+        # assert np.sum(np.abs(next_state - obs)) < 1e-6, 'Predicted and Actual Next States are not the same!\nPredicted: {} \nActual: {}'.format(next_state, obs)
         plt.xlim([pos[-1] - 5.0, pos[0] + 5.0])
         plt.pause(0.01)
         episode_reward += reward
         episode_step += 1
-        print('episode_reward = {}'.format(episode_reward))
+        print('action = {},\taction_cbf = {},\tepisode_reward = {:.3f}'.format(random_action + action_safe, action_safe, episode_reward))
 
     plt.show()

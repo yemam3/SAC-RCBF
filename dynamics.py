@@ -21,7 +21,7 @@ A few things to note:
 
 DYNAMICS_MODE = {'Unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
                  'SimulatedCars': {'n_s': 10, 'n_u': 1}}  # state = [x y θ v ω]
-MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SimulatedCars': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SimulatedCars': [0, 0.4, 0, 0.4, 0, 0.4, 0, 0.4, 0, 0.4]}
 
 
 class DynamicsModel:
@@ -299,7 +299,7 @@ class DynamicsModel:
             if self.history_counter % (self.max_history_count/2) == 0:
                 self.fit_gp_model()
 
-    def fit_gp_model(self, training_iter=50):
+    def fit_gp_model(self, training_iter=70):
         """
 
         Parameters

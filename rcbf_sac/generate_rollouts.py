@@ -58,7 +58,8 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, k_
 
             # Compute Reward
             car_4_vel = next_obs_batch_[:, 7]  # car's 4 velocity
-            reward_batch_ = -np.abs(car_4_vel) * np.abs(action_batch_.squeeze()) * (action_batch_.squeeze() > 0) / env.max_episode_steps
+            # reward_batch_ = -2.0 * np.abs(car_4_vel) * np.abs(action_batch_.squeeze()) * (action_batch_.squeeze() > 0) / env.max_episode_steps
+            reward_batch_ = -5.0 * np.abs(action_batch_.squeeze()) / env.max_episode_steps
 
             # Compute Done
             done_batch_ = next_t_batch_ >= env.max_episode_steps * env.dt  # done?
