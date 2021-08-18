@@ -4,8 +4,7 @@ import torch
 from dynamics import DYNAMICS_MODE
 import cvxpy as cp
 from cvxpylayers.torch import CvxpyLayer
-from util import prRed
-from util import prCyan
+from util import to_tensor, prRed, prCyan
 from time import time
 from qpth.qp import QPFunction, QPSolvers
 

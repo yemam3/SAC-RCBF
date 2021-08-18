@@ -14,10 +14,10 @@ from util import to_tensor, to_numpy
 
 class BaseGPy(gpytorch.models.ExactGP):
 
-    def __init__(self, train_x, train_y, likelihood):
+    def __init__(self, train_x, train_y, prior_std, likelihood):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ZeroMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(lengthscale_prior=1e-5), outputscale_prior=prior_std**2)
 
     def forward(self, x):
         mean = self.mean_module(x)
@@ -30,7 +30,7 @@ class GPyDisturbanceEstimator:
     A wrapper around teh BaseGPy model above.
     """
 
-    def __init__(self, train_x, train_y, likelihood=None, device=None):
+    def __init__(self, train_x, train_y, prior_std, likelihood=None, device=None):
 
 
 
@@ -50,7 +50,7 @@ class GPyDisturbanceEstimator:
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
         self.likelihood = likelihood.to(self.device)
 
-        self.model = BaseGPy(train_x, train_y, likelihood)
+        self.model = BaseGPy(train_x, train_y, prior_std, likelihood)
         self.model = self.model.to(self.device)
 
     def train(self, training_iter, verbose=False):
@@ -129,7 +129,7 @@ if __name__ == '__main__':
     # True function is sin(2*pi*x) with Gaussian noise
     train_y = torch.sin(train_x * (2 * math.pi)) + torch.randn(train_x.size()) * 0.2
 
-    disturb_estimator = GPyDisturbanceEstimator(train_x, train_y)
+    disturb_estimator = GPyDisturbanceEstimator(train_x, train_y, 0.0)
     disturb_estimator.train(training_iter)
 
     print('Testing model...')

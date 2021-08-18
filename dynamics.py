@@ -21,7 +21,7 @@ A few things to note:
 
 DYNAMICS_MODE = {'Unicycle': {'n_s': 3, 'n_u': 2},   # state = [x y θ]
                  'SimulatedCars': {'n_s': 10, 'n_u': 1}}  # state = [x y θ v ω]
-MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SimulatedCars': [0, 0.4, 0, 0.4, 0, 0.4, 0, 0.4, 0, 0.4]}
+MAX_STD = {'Unicycle': [2e-1, 2e-1, 2e-1], 'SimulatedCars': [0, 0.2, 0, 0.2, 0, 0.2, 0, 0.2, 0, 0.2]}
 
 
 class DynamicsModel:
@@ -296,7 +296,7 @@ class DynamicsModel:
             self.history_counter += 1
 
             # Update GP models every max_history_count data points
-            if self.history_counter % (self.max_history_count/2) == 0:
+            if self.history_counter % (self.max_history_count/3) == 0:
                 self.fit_gp_model()
 
     def fit_gp_model(self, training_iter=70):
@@ -328,7 +328,7 @@ class DynamicsModel:
         self.disturb_estimators = []
         for i in range(self.n_s):
             # self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i]))
-            self.disturb_estimators.append(GPyDisturbanceEstimator(train_x_normalized, train_y_normalized[:, i], device=self.device))
+            self.disturb_estimators.append(GPyDisturbanceEstimator(train_x_normalized, train_y_normalized[:, i], MAX_STD[self.env.dynamics_mode][i], device=self.device))
             self.disturb_estimators[i].train(training_iter)
 
         # track the data I last used to fit the GPs for saving purposes (need it to initialize before loading weights)
@@ -397,7 +397,7 @@ class DynamicsModel:
             train_x = torch.load('{}/gp_models_train_x.pkl'.format(output))
             train_y = torch.load('{}/gp_models_train_y.pkl'.format(output))
             for i in range(self.n_s):
-                self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i], device=self.device))
+                self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i], MAX_STD[self.env.dynamics_mode][i], device=self.device))
                 self.disturb_estimators[i].model.load_state_dict(weights[i])
         except:
             raise Exception('Could not load GP models from {}'.format(output))

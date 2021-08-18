@@ -31,7 +31,7 @@ class SimulatedCarsEnv(gym.Env):
 
         # Gaussian Noise Parameters on the accelerations of the other vehicles
         self.disturb_mean = np.zeros((1,))
-        self.disturb_covar = np.diag([0.05])
+        self.disturb_covar = np.diag([0.025])
 
         self.reset()
 
@@ -178,13 +178,20 @@ if __name__ == "__main__":
     episode_step = 0
 
     # Plot initial state
-    p_pos = plt.scatter(obs[::2], np.zeros(5), marker='s', s=13*60, cmap='Accent', c=list(range(5)))
+    car_patches = []
+    plt.figure(figsize=(20, 5), dpi=80)
+    for i in range(5):
+        car_patches.append(plt.Rectangle((obs[2*i] - 1.5, -1.0), 3.0, 2.0, fc='blue', ec='blue', alpha=0.2))
+        plt.gca().add_patch(car_patches[i])
     p_vel = plt.quiver(obs[::2], np.zeros(5), obs[1::2], np.zeros(5))
+    plt.ylim([-6.0, 6.0])
+    plt.grid()
 
     while not done:
         # Plot current state
         pos = obs[::2]
-        p_pos.set_offsets(np.c_[pos, np.zeros(pos.shape)])
+        for i in range(5):
+            car_patches[i].set_x(obs[2*i] - 1.5)
         p_vel.XY[:, 0] = obs[::2]
         p_vel.set_UVC(obs[1::2], np.zeros(5))
         # Take Action and get next state

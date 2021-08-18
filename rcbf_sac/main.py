@@ -49,7 +49,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
             state = dynamics_model.get_state(obs)
 
             # Generate Model rollouts
-            if args.model_based and len(memory) > 0:
+            if args.model_based and len(memory) > 100:
                 memory_model = generate_model_rollouts(env, memory_model, memory, agent, dynamics_model,
                                                        k_horizon=args.k_horizon,
                                                        batch_size=min(len(memory), args.rollout_batch_size),
@@ -107,7 +107,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
 
             # Update state and store transition for GP model learning
             next_state = dynamics_model.get_state(next_obs)
-            if episode_steps % 2 == 0:
+            if episode_steps % 2 == 0 and i_episode < args.max_episodes/3:  # Stop learning the dynamics after a while to stabilize learning
                 # TODO: Clean up line below, specifically (t_batch)
                 dynamics_model.append_transition(state, action, next_state, t_batch=np.array([episode_steps*env.dt]))
 
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     parser.add_argument('--validate_steps', default=1000, type=int, help='how many steps to perform a validate experiment')
     # CBF, Dynamics, Env Args
     parser.add_argument('--no_diff_qp', action='store_false', dest='diff_qp', help='Should the agent diff through the CBF?')
-    parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
+    parser.add_argument('--gp_model_size', default=3000, type=int, help='gp')
     parser.add_argument('--k_d', default=3.0, type=float)
     parser.add_argument('--gamma_b', default=20, type=float)
     parser.add_argument('--l_p', default=0.03, type=float,
