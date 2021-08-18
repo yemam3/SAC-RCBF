@@ -31,7 +31,7 @@ class SimulatedCarsEnv(gym.Env):
 
         # Gaussian Noise Parameters on the accelerations of the other vehicles
         self.disturb_mean = np.zeros((1,))
-        self.disturb_covar = np.diag([0.025])
+        self.disturb_covar = np.diag([0.2**2])
 
         self.reset()
 
@@ -187,6 +187,13 @@ if __name__ == "__main__":
     plt.ylim([-6.0, 6.0])
     plt.grid()
 
+    def controller(obs):
+        gain = 1.0
+        action = np.array([gain * (obs[4] - obs[6] - 0.4) * (obs[4] - obs[6] - 0.4 < 0)])
+        action += np.array([gain * (obs[8] - obs[6] + 0.4) * (obs[8] - obs[6] + 0.4 > 0)])
+        action[0] = 0
+        return action
+
     while not done:
         # Plot current state
         pos = obs[::2]
@@ -195,7 +202,8 @@ if __name__ == "__main__":
         p_vel.XY[:, 0] = obs[::2]
         p_vel.set_UVC(obs[1::2], np.zeros(5))
         # Take Action and get next state
-        random_action = env.action_space.sample()
+        # random_action = env.action_space.sample()
+        random_action = controller(obs)
         disturb_mean, disturb_std = dynamics_model.predict_disturbance(obs)
         action_safe = cbf_wrapper.get_u_safe(random_action, obs, disturb_mean, disturb_std)
         # Predict next state (testing for model-based rollouts)
