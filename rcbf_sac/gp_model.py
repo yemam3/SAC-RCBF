@@ -17,7 +17,9 @@ class BaseGPy(gpytorch.models.ExactGP):
     def __init__(self, train_x, train_y, prior_std, likelihood):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ZeroMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(lengthscale_prior=1e-5), outputscale_prior=prior_std**2)
+        self.covar_module = gpytorch.kernels.ScaleKernel(
+                            gpytorch.kernels.RBFKernel(lengthscale_prior=gpytorch.priors.NormalPrior(1e-5, 0.0)),
+                            outputscale_prior=gpytorch.priors.NormalPrior(0.0, prior_std))
 
     def forward(self, x):
         mean = self.mean_module(x)
