@@ -250,7 +250,7 @@ class CBFQPLayer:
             num_cbfs = self.num_cbfs
             hazards_radius = self.env.hazards_radius
             hazards_locations = to_tensor(self.env.hazards_locations, torch.FloatTensor, self.device)
-            collision_radius = hazards_radius + 0.15  # add a little buffer
+            collision_radius = 1.2 * hazards_radius  # add a little buffer
             l_p = self.l_p
 
             thetas = state_batch[:, 2, :].squeeze(-1)
@@ -315,7 +315,7 @@ class CBFQPLayer:
 
             n_u = action_batch.shape[1]  # dimension of control inputs
             num_constraints = self.num_cbfs + 2 * n_u  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
-            collision_radius = 4.5
+            collision_radius = 3.5
 
             # Inequality constraints (G[u, eps] <= h)
             G = torch.zeros((batch_size, num_constraints, n_u + 1)).to(self.device)  # the extra variable is for epsilon (to make sure qp is always feasible)

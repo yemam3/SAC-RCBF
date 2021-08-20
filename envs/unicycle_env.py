@@ -277,8 +277,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--env-name', default="SafetyGym", help='Either SafetyGym or Unicycle.')
     parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
-    parser.add_argument('--k_d', default=2.0, type=float)
-    parser.add_argument('--gamma_b', default=50, type=float)
+    parser.add_argument('--k_d', default=3.0, type=float)
+    parser.add_argument('--gamma_b', default=20, type=float)
     parser.add_argument('--cuda', action="store_true", help='run on CUDA (default: False)')
     args = parser.parse_args()
 

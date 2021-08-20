@@ -220,7 +220,9 @@ class DynamicsModel:
             state_batch[:, 1] = obs[:, 1]
             state_batch[:, 2] = theta
         elif self.env.dynamics_mode == 'SimulatedCars':
-            state_batch = obs
+            state_batch = np.copy(obs)
+            state_batch[:, ::2] *= 100.0  # Scale Positions
+            state_batch[:, 1::2] *= 30.0  # Scale Velocities
         else:
             raise Exception('Unknown dynamics')
 
@@ -251,7 +253,9 @@ class DynamicsModel:
             obs[:, 2] = np.cos(state_batch[:, 2])
             obs[:, 3] = np.sin(state_batch[:, 2])
         elif self.env.dynamics_mode == 'SimulatedCars':
-            obs = state_batch
+            obs = np.copy(state_batch)
+            obs[:, ::2] /= 100.0  # Scale Positions
+            obs[:, 1::2] /= 30.0  # Scale Velocities
         else:
             raise Exception('Unknown dynamics')
         return obs

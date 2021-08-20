@@ -90,7 +90,7 @@ class CascadeCBFLayer:
 
         if self.env.dynamics_mode == 'Unicycle':
 
-            collision_radius = self.env.hazards_radius + 0.07  # add a little buffer
+            collision_radius = 1.2 * self.env.hazards_radius  # add a little buffer
 
             # p(x): lookahead output
             p_x = np.array([state[0] + self.l_p * np.cos(state[2]), state[1] + self.l_p * np.sin(state[2])])
@@ -150,7 +150,7 @@ class CascadeCBFLayer:
 
             n_u = u_nom.shape[0]  # dimension of control inputs
             num_constraints = 4  # each cbf is a constraint, and we need to add actuator constraints (n_u of them)
-            collision_radius = 4.5
+            collision_radius = 3.5
 
             # Inequality constraints (G[u, eps] <= h)
             G = np.zeros((num_constraints, n_u + 1))

@@ -18,7 +18,7 @@ class SimulatedCarsEnv(gym.Env):
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,))
         self.safe_action_space = spaces.Box(low=-10.0, high=10.0, shape=(1,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(10,))
-        self.max_episode_steps = 200
+        self.max_episode_steps = 300
         self.dt = 0.02
 
         # Gains
@@ -70,7 +70,7 @@ class SimulatedCarsEnv(gym.Env):
         g_x = np.zeros(10)
 
         f_x[::2] = vels  # Derivatives of positions are velocities
-        f_x[1::2] = accels # Derivatives of velocities are acceleration
+        f_x[1::2] = accels  # Derivatives of velocities are acceleration
         g_x[7] = 50.0  # Car 4's acceleration (idx = 2*4 - 1) is the control input
 
         self.state += self.dt * (f_x + g_x * action)
@@ -87,10 +87,9 @@ class SimulatedCarsEnv(gym.Env):
 
     def _get_reward(self, action):
 
-        car_4_vel = self.state[7]  # car's 4 velocity
-
+        # car_4_vel = self.state[7]  # car's 4 velocity
         # return -np.abs(car_4_vel) * np.abs(action) * (action > 0) / self.max_episode_steps
-        return -5.0 * np.abs(action) / self.max_episode_steps
+        return -5.0 * np.abs(action**2) / self.max_episode_steps
 
     def _get_cost(self):
 
@@ -118,6 +117,7 @@ class SimulatedCarsEnv(gym.Env):
         self.state = np.zeros(10)  # first col is pos, 2nd is vel
         self.state[::2] = [34.0, 28.0, 22.0, 16.0, 10.0]  # initial positions
         self.state[1::2] = 30.0  # initial velocities
+        self.state[7] = 35.0  # initial velocity of car 4
 
         self.episode_step = 0
 
@@ -151,7 +151,10 @@ class SimulatedCarsEnv(gym.Env):
           Observation: [car_1_x, car_1_v, car_1_a, ...]
         """
 
-        return np.ravel(self.state)
+        obs = np.copy(np.ravel(self.state))
+        obs[::2] /= 100.0  # scale positions
+        obs[1::2] /= 30.0  # scale velocities
+        return obs
 
 
 if __name__ == "__main__":
@@ -173,6 +176,7 @@ if __name__ == "__main__":
     cbf_wrapper = CascadeCBFLayer(env, gamma_b=args.gamma_b, k_d=args.k_d)
 
     obs = env.reset()
+    state = dynamics_model.get_state(obs)
     done = False
     episode_reward = 0
     episode_step = 0
@@ -181,31 +185,34 @@ if __name__ == "__main__":
     car_patches = []
     plt.figure(figsize=(20, 5), dpi=80)
     for i in range(5):
-        car_patches.append(plt.Rectangle((obs[2*i] - 1.5, -1.0), 3.0, 2.0, fc='blue', ec='blue', alpha=0.2))
+        car_patches.append(plt.Rectangle((state[2*i] - 1.5, -1.0), 3.0, 2.0, fc='blue', ec='blue', alpha=0.2))
         plt.gca().add_patch(car_patches[i])
-    p_vel = plt.quiver(obs[::2], np.zeros(5), obs[1::2], np.zeros(5))
+    p_vel = plt.quiver(state[::2], np.zeros(5), state[1::2], np.zeros(5))
     plt.ylim([-6.0, 6.0])
     plt.grid()
 
-    def controller(obs):
+    def controller(state):
         gain = 1.0
-        action = np.array([gain * (obs[4] - obs[6] - 0.4) * (obs[4] - obs[6] - 0.4 < 0)])
-        action += np.array([gain * (obs[8] - obs[6] + 0.4) * (obs[8] - obs[6] + 0.4 > 0)])
+        action = np.array([gain * (state[4] - state[6] - 0.4) * (state[4] - state[6] - 0.4 < 0)])
+        action += np.array([gain * (state[8] - state[6] + 0.4) * (state[8] - state[6] + 0.4 > 0)])
         action[0] = 0
         return action
 
     while not done:
         # Plot current state
-        pos = obs[::2]
+        state = dynamics_model.get_state(obs)
+        print('obs = {}'.format(obs))
+        print('state = {}'.format(state))
+        pos = state[::2]
         for i in range(5):
-            car_patches[i].set_x(obs[2*i] - 1.5)
-        p_vel.XY[:, 0] = obs[::2]
-        p_vel.set_UVC(obs[1::2], np.zeros(5))
+            car_patches[i].set_x(state[2*i] - 1.5)
+        p_vel.XY[:, 0] = state[::2]
+        p_vel.set_UVC(state[1::2], np.zeros(5))
         # Take Action and get next state
         # random_action = env.action_space.sample()
-        random_action = controller(obs)
-        disturb_mean, disturb_std = dynamics_model.predict_disturbance(obs)
-        action_safe = cbf_wrapper.get_u_safe(random_action, obs, disturb_mean, disturb_std)
+        random_action = controller(state)
+        disturb_mean, disturb_std = dynamics_model.predict_disturbance(state)
+        action_safe = cbf_wrapper.get_u_safe(random_action, state, disturb_mean, disturb_std)
         # Predict next state (testing for model-based rollouts)
         # Note that in this env, obs and state are the same but that's not always the case!
         next_state, next_state_std, _ = dynamics_model.predict_next_state(obs, random_action + action_safe, t_batch=np.array([env.dt * episode_step]), use_gps=False)

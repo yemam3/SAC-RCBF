@@ -19,10 +19,10 @@ class BaseGPy(gpytorch.models.ExactGP):
         self.mean_module = gpytorch.means.ZeroMean()
         self.covar_module = gpytorch.kernels.ScaleKernel(
                             gpytorch.kernels.RBFKernel(lengthscale_prior=gpytorch.priors.NormalPrior(1e5, 1e-5)),
-                            outputscale_prior=gpytorch.priors.NormalPrior(prior_std, 1e-5))
+                            outputscale_prior=gpytorch.priors.NormalPrior(prior_std + 1e-6, 1e-5))
         # Initialize lengthscale and outputscale to mean of priors
         self.covar_module.base_kernel.lengthscale = 1e5
-        self.covar_module.outputscale = prior_std
+        self.covar_module.outputscale = prior_std + 1e-6
 
     def forward(self, x):
         mean = self.mean_module(x)
