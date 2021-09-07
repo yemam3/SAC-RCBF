@@ -4,7 +4,7 @@ Repository containing the code for the paper "Safe  Model-Based  Reinforcement  
 
 While exploring, an RL agent can take actions that lead the system to unsafe states. Here, we use a differentiable RCBF safety layer that minimially alters (in the least-squares sense) the actions taken by the RL agent to ensure the safety of the agent.
 
-### Robust Control Barrier Functions
+### Robust control barrier functions
 
 As explained in the paper, RCBFs are formulated with respect to differential inclusions that serve to represent disturbed dynamical system (`x_dot \in f(x) + g(x)u + D(x)`). The QP used to ensure the system's safety is given by:
 ```
@@ -20,7 +20,7 @@ The above is sufficient to ensure the safety of the system, however, we would al
 * Using a differentiable version of the safety layer that allows us to backpropagte through the RCBF based Quadratic Program (QP).
 * Using the GPs and the dynamics prior to generate synthetic data (model-based RL).
 
-### Other Approaches
+### Other approaches
 
 In addition, the approach is compared against two other frameworks (implemented includedz) in the experiments:
 * A vanilla baseline that uses SAC with RCBFs without generating synthetic data nor backproping through the QP (RL loss computed wrt ouput of RL policy).
