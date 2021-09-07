@@ -24,4 +24,4 @@ The above is sufficient to ensure the safety of the system, however, we would al
 
 In addition, the approach is compared against two other frameworks (implemented includedz) in the experiments:
 * A vanilla baseline that uses SAC with RCBFs without generating synthetic data nor backproping through the QP (RL loss computed wrt ouput of RL policy).
-* A modified approach from ("End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks")[https://ojs.aaai.org/index.php/AAAI/article/view/4213] that replaces their discrete time CBF formulation with RCBFs, but makes use of the supervised learning component to speed up the learning.
+* A modified approach from ["End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks"](https://ojs.aaai.org/index.php/AAAI/article/view/4213) that replaces their discrete time CBF formulation with RCBFs, but makes use of the supervised learning component to speed up the learning.
