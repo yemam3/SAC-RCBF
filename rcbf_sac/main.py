@@ -272,9 +272,9 @@ if __name__ == "__main__":
         prYellow('Logging experiment on comet.ml!')
         # Create an experiment with your api key
         experiment = Experiment(
-            api_key=args.comet_key, # "FN3hKqygLp0oA32u1zSm7YtLF"
+            api_key=args.comet_key,
             project_name=project_name,
-            workspace=args.comet_workspace, # yemam3
+            workspace=args.comet_workspace,
         )
         # Log args on comet.ml
         experiment.log_parameters(vars(args))
