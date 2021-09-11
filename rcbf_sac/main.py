@@ -28,6 +28,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
 
     if args.use_comp:
         compensator_rollouts = []
+        comp_buffer_idx = 0
 
     for i_episode in range(args.max_episodes):
         episode_reward = 0
@@ -49,10 +50,10 @@ def train(agent, env, dynamics_model, args, experiment=None):
             state = dynamics_model.get_state(obs)
 
             # Generate Model rollouts
-            if args.model_based and len(memory) > 100:
+            if args.model_based and episode_steps % 5 == 0 and len(memory) > dynamics_model.max_history_count / 3:
                 memory_model = generate_model_rollouts(env, memory_model, memory, agent, dynamics_model,
                                                        k_horizon=args.k_horizon,
-                                                       batch_size=min(len(memory), args.rollout_batch_size),
+                                                       batch_size=min(len(memory), 5 * args.rollout_batch_size),
                                                        warmup=args.start_steps > total_numsteps)
 
             # If using model-based RL then we only need to have enough data for the real portion of the replay buffer
@@ -107,7 +108,7 @@ def train(agent, env, dynamics_model, args, experiment=None):
 
             # Update state and store transition for GP model learning
             next_state = dynamics_model.get_state(next_obs)
-            if episode_steps % 2 == 0 and i_episode < args.max_episodes/3:  # Stop learning the dynamics after a while to stabilize learning
+            if episode_steps % 2 == 0 and i_episode < args.gp_max_episodes:  # Stop learning the dynamics after a while to stabilize learning
                 # TODO: Clean up line below, specifically (t_batch)
                 dynamics_model.append_transition(state, action, next_state, t_batch=np.array([episode_steps*env.dt]))
 
@@ -121,8 +122,13 @@ def train(agent, env, dynamics_model, args, experiment=None):
 
         # Train compensator
         if args.use_comp and i_episode < args.comp_train_episodes:
-            compensator_rollouts.append(episode_rollout)
-            agent.update_parameters_compensator(compensator_rollouts)
+            if comp_buffer_idx < 50:  # TODO: Turn the 50 into an arg
+                compensator_rollouts.append(episode_rollout)
+            else:
+                comp_buffer_idx[comp_buffer_idx] = episode_rollout
+            comp_buffer_idx = (comp_buffer_idx + 1) % 50
+            if i_episode % args.comp_update_episode == 0:
+                agent.update_parameters_compensator(compensator_rollouts)
 
         # [optional] save intermediate model
         if i_episode % int(args.max_episodes / 10) == 0:
@@ -189,7 +195,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
     # Environment Args
     parser.add_argument('--env-name', default="SimulatedCars", help='Options are Unicycle or SafetyGym')
+    # Comet ML
     parser.add_argument('--log_comet', action='store_true', dest='log_comet', help="Whether to log data")
+    parser.add_argument('--comet_key', default='', help='Comet API key')
+    parser.add_argument('--comet_workspace', default='', help='Comet workspace')
     # SAC Args
     parser.add_argument('--mode', default='train', type=str, help='support option: train/test')
     parser.add_argument('--visualize', action='store_true', dest='visualize', help='visualize env -only in available test mode')
@@ -213,8 +222,8 @@ if __name__ == "__main__":
                         help='random seed (default: 12345)')
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='batch size (default: 256)')
-    parser.add_argument('--max_episodes', type=int, default=600, metavar='N',
-                        help='maximum number of steps (default: 1000000)')
+    parser.add_argument('--max_episodes', type=int, default=400, metavar='N',
+                        help='maximum number of episodes (default: 400)')
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
     parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
@@ -227,12 +236,14 @@ if __name__ == "__main__":
                         help='size of replay buffer (default: 10000000)')
     parser.add_argument('--cuda', action="store_true",
                         help='run on CUDA (default: False)')
+    parser.add_argument('--device_num', type=int, default=0, help='Select GPU number for CUDA (default: 0)')
     parser.add_argument('--resume', default='default', type=str, help='Resuming model path for testing')
     parser.add_argument('--validate_episodes', default=5, type=int, help='how many episode to perform during validate experiment')
     parser.add_argument('--validate_steps', default=1000, type=int, help='how many steps to perform a validate experiment')
     # CBF, Dynamics, Env Args
     parser.add_argument('--no_diff_qp', action='store_false', dest='diff_qp', help='Should the agent diff through the CBF?')
     parser.add_argument('--gp_model_size', default=3000, type=int, help='gp')
+    parser.add_argument('--gp_max_episodes', default=100, type=int, help='gp max train episodes.')
     parser.add_argument('--k_d', default=3.0, type=float)
     parser.add_argument('--gamma_b', default=20, type=float)
     parser.add_argument('--l_p', default=0.03, type=float,
@@ -244,7 +255,8 @@ if __name__ == "__main__":
     parser.add_argument('--rollout_batch_size', default=5, type=int, help='Size of initial states batch to rollout from.')
     # Compensator
     parser.add_argument('--comp_rate', default=0.005, type=float, help='Compensator learning rate')
-    parser.add_argument('--comp_train_episodes', default=20, type=int, help='Number of initial episodes to train compensator for.')
+    parser.add_argument('--comp_train_episodes', default=200, type=int, help='Number of initial episodes to train compensator for.')
+    parser.add_argument('--comp_update_episode', default=50, type=int, help='Modulo for compensator updates')
     parser.add_argument('--use_comp', type=bool, default=False, help='Should the compensator be used.')
     args = parser.parse_args()
 
@@ -252,14 +264,17 @@ if __name__ == "__main__":
     if args.resume == 'default':
         args.resume = os.getcwd() + '/output/{}-run0'.format(args.env_name)
 
+    if args.cuda:
+        torch.cuda.set_device(args.device_num)
+
     if args.mode == 'train' and args.log_comet:
         project_name = 'sac-rcbf-unicycle-environment' if args.env_name == 'Unicycle' else 'sac-rcbf-sim-cars-env'
         prYellow('Logging experiment on comet.ml!')
         # Create an experiment with your api key
         experiment = Experiment(
-            api_key="FN3hKqygLp0oA32u1zSm7YtLF",
+            api_key=args.comet_key, # "FN3hKqygLp0oA32u1zSm7YtLF"
             project_name=project_name,
-            workspace="yemam3",
+            workspace=args.comet_workspace, # yemam3
         )
         # Log args on comet.ml
         experiment.log_parameters(vars(args))

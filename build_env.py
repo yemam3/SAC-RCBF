@@ -9,7 +9,7 @@ def build_env(args):
     """Build our custom gym environment."""
 
     if args.env_name == 'Unicycle':
-        return UnicycleEnv(noisy=True)
+        return UnicycleEnv()
     elif args.env_name == 'SimulatedCars':
         return SimulatedCarsEnv()
     else:

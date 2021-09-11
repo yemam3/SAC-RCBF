@@ -7,7 +7,7 @@ class UnicycleEnv(gym.Env):
 
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, noisy=False):
+    def __init__(self):
 
         super(UnicycleEnv, self).__init__()
 
@@ -16,11 +16,12 @@ class UnicycleEnv(gym.Env):
         # They must be gym.spaces objects
         # Example when using discrete actions:
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,))
-        self.safe_action_space = spaces.Box(low=-1.2, high=1.2, shape=(2,))
+        self.safe_action_space = spaces.Box(low=-2.5, high=2.5, shape=(2,))
         self.observation_space = spaces.Box(low=-1e10, high=1e10, shape=(7,))
         self.bds = np.array([[-3., -3.], [3., 3.]])
         self.hazards_radius = 0.6
         self.hazards_locations = np.array([[0., 0.], [-1., 1.], [-1., -1.], [1., -1.], [1., 1.]]) * 1.5
+        # self.hazards_locations = np.array([[-0.5, -1.5], [1., 0.], [-2.0, -1.5], [1.0, -1.5], [1.0, 1.5]])
         self.dt = 0.02
         self.max_episode_steps = 1000
         self.reward_goal = 1.0
@@ -29,11 +30,12 @@ class UnicycleEnv(gym.Env):
         self.state = None
         self.episode_step = 0
         self.goal_pos = np.array([2.5, 2.5])
+        # self.goal_pos = np.array([-0.5, 0.0])
+
         self.reset()
         # Get Dynamics
         self.get_f, self.get_g = self._get_dynamics()
         # Disturbance
-        self.disturbed_dynamics = noisy
         self.disturb_mean = np.zeros((3,))
         self.disturb_covar = np.diag([0.005, 0.005, 0.05]) * 20
 
@@ -79,8 +81,7 @@ class UnicycleEnv(gym.Env):
 
         # Start with our prior for continuous time system x' = f(x) + g(x)u
         self.state += self.dt * (self.get_f(self.state) + self.get_g(self.state) @ action)
-        if self.disturbed_dynamics:
-            self.state += self.dt * np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
+        self.state -= self.dt * 0.1 * self.get_g(self.state) @ np.array([np.cos(self.state[2]),  0])  #* np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
 
         self.episode_step += 1
 
@@ -131,9 +132,6 @@ class UnicycleEnv(gym.Env):
 
         # Re-initialize state
         self.state = np.array([-2.5, -2.5, 0.])
-
-        # Re-initialize goal
-        self.goal_pos = np.array([2.5, 2.5])
 
         # Re-initialize last goal dist
         self.last_goal_dist = self._goal_dist()
@@ -278,7 +276,7 @@ if __name__ == "__main__":
     parser.add_argument('--env-name', default="SafetyGym", help='Either SafetyGym or Unicycle.')
     parser.add_argument('--gp_model_size', default=2000, type=int, help='gp')
     parser.add_argument('--k_d', default=3.0, type=float)
-    parser.add_argument('--gamma_b', default=20, type=float)
+    parser.add_argument('--gamma_b', default=40, type=float)
     parser.add_argument('--cuda', action="store_true", help='run on CUDA (default: False)')
     args = parser.parse_args()
 
@@ -305,7 +303,7 @@ if __name__ == "__main__":
     for i in range(len(env.hazards_locations)):
         ax.add_patch(plt.Circle(env.hazards_locations[i], env.hazards_radius, color='r'))
     ax.add_patch(plt.Circle(env.goal_pos, env.goal_size, color='g'))
-    p_pos = ax.scatter(obs[0], obs[1])
+    p_pos = ax.scatter(obs[0], obs[1], s=300)
     p_theta = plt.quiver(obs[0], obs[1], obs[0] + .2 * obs[2], .2 * obs[3])
     plt.xlim([-3.0, 3.0])
     plt.ylim([-3.0, 3.0])

@@ -74,7 +74,7 @@ class Compensator:
         action = self.comp_actor(observation) * self.is_trained
         return scale_action(action, self.action_lb, self.action_ub)
 
-    def train(self, rollouts, epochs=10):
+    def train(self, rollouts, epochs=1):
         """
 
         Parameters
@@ -109,7 +109,8 @@ class Compensator:
             all_obs = to_tensor(all_obs, torch.FloatTensor, self.device)
             all_u_comp = to_tensor(all_u_comp, torch.FloatTensor, self.device)
             all_u_safe = to_tensor(all_u_safe, torch.FloatTensor, self.device)
-            comp_actor_loss = criterion(self.comp_actor(all_obs), all_u_comp + all_u_safe)
+            target = scale_action(all_u_comp + all_u_safe, self.action_lb, self.action_ub)
+            comp_actor_loss = criterion(self.comp_actor(all_obs), target)
 
             comp_actor_loss.backward()
             self.comp_actor_optim.step()

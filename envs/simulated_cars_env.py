@@ -59,11 +59,12 @@ class SimulatedCarsEnv(gym.Env):
         vels_des = 30.0 * np.ones(5)  # Desired velocities
         vels_des[0] -= 10*np.sin(0.2*self.t)
         accels = self.kp * (vels_des - vels)
-        accels[0] += np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
-        accels[1] += -self.k_brake * (pos[0] - pos[1]) * ((pos[0] - pos[1]) < 6.0) + np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
-        accels[2] += -self.k_brake * (pos[1] - pos[2]) * ((pos[1] - pos[2]) < 6.0) + np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
-        accels[3] = np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()  # Car 4's acceleration is controlled directly
-        accels[4] += -self.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 13.0) + np.random.multivariate_normal(self.disturb_mean, self.disturb_covar, 1).squeeze()
+        accels[1] += -self.k_brake * (pos[0] - pos[1]) * ((pos[0] - pos[1]) < 6.0)
+        accels[2] += -self.k_brake * (pos[1] - pos[2]) * ((pos[1] - pos[2]) < 6.0)
+        accels[4] += -self.k_brake * (pos[2] - pos[4]) * ((pos[2] - pos[4]) < 13.0)
+
+        # Add deterministic disturbance
+        accels *= 1.1
 
         # Determine action of each car
         f_x = np.zeros(10)
@@ -116,7 +117,7 @@ class SimulatedCarsEnv(gym.Env):
         self.t = 0
         self.state = np.zeros(10)  # first col is pos, 2nd is vel
         self.state[::2] = [34.0, 28.0, 22.0, 16.0, 10.0]  # initial positions
-        self.state[1::2] = 30.0  # initial velocities
+        self.state[1::2] = 30.0 + np.random.normal(0, 0.5)  # initial velocities
         self.state[7] = 35.0  # initial velocity of car 4
 
         self.episode_step = 0
@@ -195,7 +196,6 @@ if __name__ == "__main__":
         gain = 1.0
         action = np.array([gain * (state[4] - state[6] - 0.4) * (state[4] - state[6] - 0.4 < 0)])
         action += np.array([gain * (state[8] - state[6] + 0.4) * (state[8] - state[6] + 0.4 > 0)])
-        action[0] = 0
         return action
 
     while not done:

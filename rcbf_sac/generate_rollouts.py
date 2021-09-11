@@ -75,10 +75,7 @@ def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, k_
         obs_batch_ = deepcopy(next_obs_batch_)
 
         # Delete Done Trajectories
-        # prCyan('batch_size before omission = {}'.format(obs_batch_.shape))
         if np.sum(done_batch_) > 0:
-            # print('reached_goal = {}'.format(done_batch_))
             obs_batch_ = np.delete(obs_batch_, done_batch_ > 0, axis=0)
-        # prCyan('batch_size after omission = {}, #dones = {}'.format(obs_batch_.shape, np.sum(done_batch_)))
 
     return memory_model

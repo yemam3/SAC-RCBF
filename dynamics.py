@@ -300,7 +300,7 @@ class DynamicsModel:
             self.history_counter += 1
 
             # Update GP models every max_history_count data points
-            if self.history_counter % (self.max_history_count/3) == 0:
+            if self.history_counter % (self.max_history_count/10) == 0:
                 self.fit_gp_model()
 
     def fit_gp_model(self, training_iter=70):
