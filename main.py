@@ -194,7 +194,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
     # Environment Args
-    parser.add_argument('--env-name', default="SimulatedCars", help='Options are Unicycle or SafetyGym')
+    parser.add_argument('--env-name', default="SimulatedCars", help='Options are Unicycle or SimulatedCars.')
     # Comet ML
     parser.add_argument('--log_comet', action='store_true', dest='log_comet', help="Whether to log data")
     parser.add_argument('--comet_key', default='', help='Comet API key')
