@@ -21,7 +21,6 @@ class UnicycleEnv(gym.Env):
         self.bds = np.array([[-3., -3.], [3., 3.]])
         self.hazards_radius = 0.6
         self.hazards_locations = np.array([[0., 0.], [-1., 1.], [-1., -1.], [1., -1.], [1., 1.]]) * 1.5
-        # self.hazards_locations = np.array([[-0.5, -1.5], [1., 0.], [-2.0, -1.5], [1.0, -1.5], [1.0, 1.5]])
         self.dt = 0.02
         self.max_episode_steps = 1000
         self.reward_goal = 1.0
@@ -30,7 +29,6 @@ class UnicycleEnv(gym.Env):
         self.state = None
         self.episode_step = 0
         self.goal_pos = np.array([2.5, 2.5])
-        # self.goal_pos = np.array([-0.5, 0.0])
 
         self.reset()
         # Get Dynamics
