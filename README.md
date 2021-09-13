@@ -25,3 +25,17 @@ The above is sufficient to ensure the safety of the system, however, we would al
 In addition, the approach is compared against two other frameworks (implemented includedz) in the experiments:
 * A vanilla baseline that uses SAC with RCBFs without generating synthetic data nor backproping through the QP (RL loss computed wrt ouput of RL policy).
 * A modified approach from ["End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks"](https://ojs.aaai.org/index.php/AAAI/article/view/4213) that replaces their discrete time CBF formulation with RCBFs, but makes use of the supervised learning component to speed up the learning.
+
+### Running the experiments
+
+The two environments are `Unicycle` and `SimulatedCars`. `Unicycle` involves a goal tasked with reaching a desired location while avoiding obstacles and `SimulatedCars` involves a chain of cars driving in a lane, the RL agent controls the 4th car and must try minimzing control effort while avoiding obstacles.
+
+* Running the proposed approach: 
+`python main.py --env SimulatedCars --cuda --updates_per_step 2 --batch_size 512  --seed 12345 --model_based`
+
+* Running the baseline:
+`python main.py --env SimulatedCars --cuda --updates_per_step 1 --batch_size 256  --seed 12345 --no_diff_qp`
+
+* Running the modified approach from "End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks": 
+`python main.py --env SimulatedCars --cuda --updates_per_step 1 --batch_size 256   --seed 12345 --no_diff_qp --use_comp True`
+
