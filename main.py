@@ -7,12 +7,12 @@ import numpy as np
 
 from rcbf_sac.sac_cbf import RCBF_SAC
 from rcbf_sac.replay_memory import ReplayMemory
-from dynamics import DynamicsModel
+from rcbf_sac.dynamics import DynamicsModel
 from build_env import *
 import os
 
-from util import prGreen, get_output_folder, prYellow
-from evaluator import Evaluator
+from rcbf_sac.utils import prGreen, get_output_folder, prYellow
+from rcbf_sac.evaluator import Evaluator
 from rcbf_sac.generate_rollouts import generate_model_rollouts
 
 

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from rcbf_sac.gp_model import GPyDisturbanceEstimator
-from util import to_tensor, to_numpy
+from rcbf_sac.utils import to_tensor, to_numpy
 
 """
 This file contains the DynamicsModel class. Depending on the environment selected, it contains the dynamics

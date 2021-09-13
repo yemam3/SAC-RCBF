@@ -1,10 +1,8 @@
 import numpy as np
-
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-
-from util import scale_action, to_tensor, to_numpy
+from rcbf_sac.utils import scale_action, to_tensor, to_numpy
 
 criterion = nn.MSELoss()
 

@@ -1,8 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import savemat
-
-from util import *
+from rcbf_sac.utils import *
 
 
 class Evaluator(object):

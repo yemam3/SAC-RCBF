@@ -2,14 +2,11 @@
 https://docs.gpytorch.ai/en/stable/examples/02_Scalable_Exact_GPs/Simple_GP_Regression_CUDA.html
 
 Training is performed rapidly (and exactly) using GPUs and prediction is done very rapidly using LOVE.
-
-TODO: GPyTorch can kind of support online learning if needed... https://github.com/cornellius-gp/gpytorch/issues/1200
 """
 
 import torch
 import gpytorch
-
-from util import to_tensor, to_numpy
+from rcbf_sac.utils import to_tensor, to_numpy
 
 
 class BaseGPy(gpytorch.models.ExactGP):

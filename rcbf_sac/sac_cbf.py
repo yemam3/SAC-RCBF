@@ -5,8 +5,8 @@ from rcbf_sac.utils import soft_update, hard_update
 from rcbf_sac.model import GaussianPolicy, QNetwork, DeterministicPolicy
 import numpy as np
 from rcbf_sac.diff_cbf_qp import CBFQPLayer
-from util import to_tensor
-from compensator import Compensator
+from rcbf_sac.utils import to_tensor
+from rcbf_sac.compensator import Compensator
 from copy import deepcopy
 
 class RCBF_SAC(object):

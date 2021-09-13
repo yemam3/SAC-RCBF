@@ -1,12 +1,10 @@
 import argparse
 import numpy as np
 import torch
-from dynamics import DYNAMICS_MODE
-import cvxpy as cp
-from cvxpylayers.torch import CvxpyLayer
-from util import to_tensor, prRed, prCyan
+from rcbf_sac.dynamics import DYNAMICS_MODE
+from rcbf_sac.utils import to_tensor, prRed
 from time import time
-from qpth.qp import QPFunction, QPSolvers
+from qpth.qp import QPFunction
 
 
 class CBFQPLayer:
@@ -24,7 +22,6 @@ class CBFQPLayer:
             confidence parameter desired (2.0 corresponds to ~95% for example).
         """
 
-        # self.cbf_layer = self.build_cbf_layer()
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
         self.env = env
@@ -43,27 +40,6 @@ class CBFQPLayer:
 
         self.action_dim = env.action_space.shape[0]
         self.num_ineq_constraints = self.num_cbfs + 2 * self.action_dim
-
-    def build_cbf_layer(self):
-        """Builds the CvxpyLayer CBF layer.
-
-        Returns
-        -------
-        cbf_qp_layer : cvxpylayers.torch.CvxpyLayer
-            CBF-based Safety layer
-        """
-
-        # Define and solve the CVXPY problem.
-        P_sqrt = cp.Parameter((self.action_dim + 1, self.action_dim + 1))
-        q = cp.Parameter((self.action_dim + 1))
-        G = cp.Parameter((self.num_cbfs + 2 * self.action_dim, self.action_dim + 1))
-        h = cp.Parameter((self.num_cbfs + 2 * self.action_dim))
-        x = cp.Variable(self.action_dim + 1)
-        prob = cp.Problem(cp.Minimize(0.5 * cp.sum_squares(P_sqrt @ x) + q.T @ x), [G @ x <= h])
-        assert prob.is_dpp()
-        cbf_qp_layer = CvxpyLayer(prob, parameters=[P_sqrt, q, G, h], variables=[x])
-
-        return cbf_qp_layer
 
     def get_safe_action(self, state_batch, action_batch, mean_pred_batch, sigma_batch):
         """
@@ -125,33 +101,11 @@ class CBFQPLayer:
 
 
         Ghs = torch.cat((Gs, hs.unsqueeze(2)), -1)
-        # Ghs_norm = torch.sum(torch.abs(Ghs), dim=2, keepdim=True)
         Ghs_norm = torch.max(torch.abs(Ghs), dim=2, keepdim=True)[0]
         Gs /= Ghs_norm
         hs = hs / Ghs_norm.squeeze(-1)
-        # print('Ps = {}'.format(Ps))
-        # print('qs = {}'.format(qs))
-        # print('Gs = {}'.format(Gs))
-        # print('hs = {}'.format(hs))
-        # if(Ps.shape[0] == 1):
-        #     from quadprog import solve_qp
-        #     P = Ps[0].cpu().detach().numpy().astype(np.double)
-        #     q = qs[0].cpu().detach().numpy().astype(np.double).squeeze()
-        #     G = Gs[0].cpu().detach().numpy().astype(np.double)
-        #     h = hs.cpu().detach().numpy().astype(np.double).squeeze()
-        #     print('P = {}'.format(P))
-        #     print('q = {}'.format(q))
-        #     print('G = {}'.format(G))
-        #     print('h = {}'.format(h))
-        #     sol = solve_qp(P, q, -G.T, -h)
-        #     u_safe = sol[0][:-1]
-        #     print('quadprog = {} eps = {}'.format(u_safe, sol[0][-1]))
-
-        # sol = self.cbf_layer(torch.sqrt(Ps), qs, Gs, hs, solver_args={'solve_method': 'ECOS'})[0]  # CVXPYLAYER
         sol = self.cbf_layer(Ps, qs, Gs, hs, solver_args={"check_Q_spd": False, "maxIter": 100000, "notImprovedLim": 10, "eps": 1e-4})
         safe_action_batch = sol[:, :-1]
-        # print('qpth = {}'.format(safe_action_batch[0]))
-
         return safe_action_batch
 
     def cbf_layer(self, Qs, ps, Gs, hs, As=None, bs=None, solver_args=None):
@@ -444,9 +398,9 @@ class CBFQPLayer:
 if __name__ == "__main__":
 
     from build_env import build_env
-    from dynamics import DynamicsModel
+    from rcbf_sac.dynamics import DynamicsModel
     from copy import deepcopy
-    from util import to_tensor, to_numpy, prGreen
+    from rcbf_sac.utils import to_numpy, prGreen
 
 
     def simple_controller(env, state, goal):

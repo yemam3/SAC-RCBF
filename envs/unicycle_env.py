@@ -268,8 +268,8 @@ def get_random_hazard_locations(n_hazards, hazard_radius, bds=None):
 if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
-    from archive.cbf_cascade import CascadeCBFLayer
-    from dynamics import DynamicsModel
+    from rcbf_sac.cbf_qp import CascadeCBFLayer
+    from rcbf_sac.dynamics import DynamicsModel
     import argparse
 
     parser = argparse.ArgumentParser()

@@ -1,5 +1,5 @@
 import numpy as np
-from dynamics import DYNAMICS_MODE
+from rcbf_sac.dynamics import DYNAMICS_MODE
 from quadprog import solve_qp
 
 class CascadeCBFLayer:

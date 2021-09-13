@@ -1,6 +1,6 @@
 import numpy as np
 from copy import deepcopy
-from util import euler_to_mat_2d, prCyan, prRed
+from rcbf_sac.utils import euler_to_mat_2d, prCyan, prRed
 
 
 def generate_model_rollouts(env, memory_model, memory, agent, dynamics_model, k_horizon=1, batch_size=20, warmup=False):
