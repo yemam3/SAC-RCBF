@@ -1,3 +1,0 @@
-[submodule "pytorch_sac"]
-	path = pytorch_sac
-	url = https://github.com/pranz24/pytorch-soft-actor-critic.git
