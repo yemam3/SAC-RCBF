@@ -28,7 +28,7 @@ In addition, the approach is compared against two other frameworks (implementate
 
 ### Running the experiments
 
-The two environments are `Unicycle` and `SimulatedCars`. `Unicycle` involves a unicycle robot tasked with reaching a desired location while avoiding obstacles and `SimulatedCars` involves a chain of cars driving in a lane, the RL agent controls the 4th car and must try minimzing control effort while avoiding obstacles.
+The two environments are `Unicycle` and `SimulatedCars`. `Unicycle` involves a unicycle robot tasked with reaching a desired location while avoiding obstacles and `SimulatedCars` involves a chain of cars driving in a lane, the RL agent controls the 4th car and must try minimzing control effort while avoiding colliding with the other cars.
 
 * Running the proposed approach: 
 `python main.py --env SimulatedCars --cuda --updates_per_step 2 --batch_size 512  --seed 12345 --model_based`
