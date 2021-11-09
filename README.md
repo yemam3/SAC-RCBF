@@ -12,13 +12,21 @@ While exploring, an RL agent can take actions that lead the system to unsafe sta
 
 ## Robust Control Barrier Functions (RCBFs)
 
-As explained in the paper, RCBFs are formulated with respect to differential inclusions that serve to represent disturbed dynamical system (`x_dot \in f(x) + g(x)u + D(x)`). The QP used to ensure the system's safety is given by:
-```
-u_star(x) = minimize_u ||u||^2 + l ||epsilon||^2
-subject to min. h_dot(x, D(x), u, u_RL) > - gamma * h(x) + epsilon
-```
+In this work, we focus on RCBFs that are formulated with respect to differential inclusions of the following form:
 
-In this work, the disturbance set `D` in the differential inclusion is learned via Gaussian Processes (GPs). The underlying library is GPyTorch.  
+<p align="center">
+<img src="https://github.com/yemam3/SAC-RCBF/raw/master/figures/diff_inc.png" width=30% height=30%>
+</p>
+
+Here `D(x)` is a disturbance set unkown apriori to the robot, which we learn online during traing via Gaussian Processes (GPs). The underlying library is GPyTorch. 
+ 
+The QP used to ensure the system's safety is given by:
+
+<p align="center">
+<img src="https://github.com/yemam3/SAC-RCBF/raw/master/figures/qp.png" width=70% height=70%>
+</p>
+
+where `h(x)` is the RCBF, and `u_RL` is the action outputted by the RL policy. As such, the final (safe) action taken in the environment is given by `u = u_RL + u_RCBF`.
 
 ## Coupling RL & RCBFs to Improve Training Performance
 
@@ -28,7 +36,7 @@ The above is sufficient to ensure the safety of the system, however, we would al
 
 ## Other Approaches
 
-In addition, the approach is compared against two other frameworks (implementated here) in the experiments:
+In addition, the approach is compared against two other frameworks (implemented here) in the experiments:
 * A vanilla baseline that uses SAC with RCBFs without generating synthetic data nor backproping through the QP (RL loss computed wrt ouput of RL policy).
 * A modified approach from ["End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks"](https://ojs.aaai.org/index.php/AAAI/article/view/4213) that replaces their discrete time CBF formulation with RCBFs, but makes use of the supervised learning component to speed up the learning.
 
