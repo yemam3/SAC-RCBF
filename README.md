@@ -26,12 +26,17 @@ The QP used to ensure the system's safety is given by:
 <img src="https://github.com/yemam3/SAC-RCBF/raw/master/figures/qp.png" width=70% height=70%>
 </p>
 
-where `h(x)` is the RCBF, and `u_RL` is the action outputted by the RL policy. As such, the final (safe) action taken in the environment is given by `u = u_RL + u_RCBF`.
+where `h(x)` is the RCBF, and `u_RL` is the action outputted by the RL policy. As such, the final (safe) action taken in the environment is given by `u = u_RL + u_RCBF` as shown in the following diagram:
+
+<p align="center">
+<img src="https://github.com/yemam3/SAC-RCBF/raw/master/figures/policy_diagram.png" width=70% height=70%>
+</p>
+
 
 ## Coupling RL & RCBFs to Improve Training Performance
 
 The above is sufficient to ensure the safety of the system, however, we would also like to improve the performance of the learning by letting the RCBF layer guide the training. This is achieved via:
-* Using a differentiable version of the safety layer that allows us to backpropagte through the RCBF based Quadratic Program (QP).
+* Using a differentiable version of the safety layer that allows us to backpropagte through the RCBF based Quadratic Program (QP) resulting in an end-to-end policy.
 * Using the GPs and the dynamics prior to generate synthetic data (model-based RL).
 
 ## Other Approaches
