@@ -199,11 +199,11 @@ class RCBF_SAC(object):
         print('Loading models from {}'.format(output))
 
         self.policy.load_state_dict(
-            torch.load('{}/actor.pkl'.format(output))
+            torch.load('{}/actor.pkl'.format(output), map_location=torch.device(self.device))
         )
 
         self.critic.load_state_dict(
-            torch.load('{}/critic.pkl'.format(output))
+            torch.load('{}/critic.pkl'.format(output), map_location=torch.device(self.device))
         )
 
     def load_model(self, actor_path, critic_path):

@@ -397,11 +397,11 @@ class DynamicsModel:
         self.disturb_estimators = []
 
         try:
-            weights = torch.load('{}/gp_models.pkl'.format(output))
-            train_x = torch.load('{}/gp_models_train_x.pkl'.format(output))
-            train_y = torch.load('{}/gp_models_train_y.pkl'.format(output))
+            weights = torch.load('{}/gp_models.pkl'.format(output), map_location=torch.device(self.device))
+            self.train_x = torch.load('{}/gp_models_train_x.pkl'.format(output))
+            self.train_y = torch.load('{}/gp_models_train_y.pkl'.format(output))
             for i in range(self.n_s):
-                self.disturb_estimators.append(GPyDisturbanceEstimator(train_x, train_y[:, i], MAX_STD[self.env.dynamics_mode][i], device=self.device))
+                self.disturb_estimators.append(GPyDisturbanceEstimator(self.train_x, self.train_y[:, i], MAX_STD[self.env.dynamics_mode][i], device=self.device))
                 self.disturb_estimators[i].model.load_state_dict(weights[i])
         except:
             raise Exception('Could not load GP models from {}'.format(output))

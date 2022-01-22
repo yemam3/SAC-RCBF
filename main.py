@@ -263,6 +263,8 @@ if __name__ == "__main__":
     args.output = get_output_folder(args.output, args.env_name)
     if args.resume == 'default':
         args.resume = os.getcwd() + '/output/{}-run0'.format(args.env_name)
+    elif args.resume.isnumeric():
+        args.resume = os.getcwd() + '/output/{}-run{}'.format(args.env_name, args.resume)
 
     if args.cuda:
         torch.cuda.set_device(args.device_num)
