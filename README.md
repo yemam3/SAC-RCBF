@@ -51,22 +51,26 @@ The two environments are `Unicycle` and `SimulatedCars`. `Unicycle` involves a u
 
 ### `Unicycle` Env: 
 
-* Running the proposed approach: 
+* Training the proposed approach: 
 `python main.py --env Unicycle --gamma_b 20 --max_episodes 400 --cuda --updates_per_step 2 --batch_size 512  --seed 12345 --model_based`
 
-* Running the baseline:
+* Training the baseline:
 `python main.py --env Unicycle --gamma_b 20 --max_episodes 400 --cuda --updates_per_step 1 --batch_size 256  --seed 12345 --no_diff_qp`
 
-* Running the modified approach from "End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks": 
+* Training the modified approach from "End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks": 
 `python main.py --env Unicycle --gamma_b 20 --max_episodes 400 --cuda --updates_per_step 1 --batch_size 256   --seed 12345 --no_diff_qp --use_comp True`
 
 ### `SimulatedCars` Env:
 
-* Running the proposed approach: 
+* Training the proposed approach: 
 `python main.py --env SimulatedCars --gamma_b 50 --max_episodes 200 --cuda --updates_per_step 2 --batch_size 512  --seed 12345 --model_based`
 
-* Running the baseline:
+* Training the baseline:
 `python main.py --env SimulatedCars --gamma_b 50 --max_episodes 200 --cuda --updates_per_step 1 --batch_size 256  --seed 12345 --no_diff_qp`
 
-* Running the modified approach from "End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks": 
+* Training the modified approach from "End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks": 
 `python main.py --env SimulatedCars --gamma_b 50 --max_episodes 200 --cuda --updates_per_step 1 --batch_size 256   --seed 12345 --no_diff_qp --use_comp True`
+
+### Testing
+
+* To test, add `--mode test` and `--resume /path/to/output/{1}-run-{2}`, where `{1}` is the env name and `{2}` is the experiment number, to any of the commands above.
