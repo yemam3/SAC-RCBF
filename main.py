@@ -260,7 +260,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_comp', type=bool, default=False, help='Should the compensator be used.')
     args = parser.parse_args()
 
-    args.output = get_output_folder(args.output, args.env_name)
+    if args.mode == 'train':
+        args.output = get_output_folder(args.output, args.env_name)
     if args.resume == 'default':
         args.resume = os.getcwd() + '/output/{}-run0'.format(args.env_name)
     elif args.resume.isnumeric():
@@ -318,7 +319,7 @@ if __name__ == "__main__":
     if args.mode == 'train':
         train(agent, env, dynamics_model, args, experiment)
     elif args.mode == 'test':
-        test(args.validate_episodes, agent, env, dynamics_model, evaluate, args.resume, visualize=False, debug=True)
+        test(args.validate_episodes, agent, env, dynamics_model, evaluate, args.resume, visualize=args.visualize, debug=True)
 
     env.close()
 
