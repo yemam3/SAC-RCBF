@@ -2,6 +2,9 @@ import numpy as np
 import gym
 from gym import spaces
 
+from envs.utils import to_pixel
+
+
 class UnicycleEnv(gym.Env):
     """Custom Environment that follows SafetyGym interface"""
 
@@ -37,6 +40,8 @@ class UnicycleEnv(gym.Env):
         self.disturb_mean = np.zeros((3,))
         self.disturb_covar = np.diag([0.005, 0.005, 0.05]) * 20
 
+        # Viewer
+        self.viewer = None
 
     def step(self, action):
         """Organize the observation to understand what's going on
@@ -140,20 +145,72 @@ class UnicycleEnv(gym.Env):
     def render(self, mode='human', close=False):
         """Render the environment to the screen
 
-        Parameters
-        ----------
-        mode : str
-        close : bool
+         Parameters
+         ----------
+         mode : str
+         close : bool
 
-        Returns
-        -------
+         Returns
+         -------
 
-        """
+         """
 
-        rel_loc = self.goal_pos - self.state[:2]
-        theta_error = np.arctan2(rel_loc[1], rel_loc[0]) - self.state[2]
+        if mode != 'human' and mode != 'rgb_array':
+            rel_loc = self.goal_pos - self.state[:2]
+            theta_error = np.arctan2(rel_loc[1], rel_loc[0]) - self.state[2]
+            print('Ep_step = {}, \tState = {}, \tDist2Goal = {}, alignment_error = {}'.format(self.episode_step,
+                                                                                              self.state,
+                                                                                              self._goal_dist(),
+                                                                                              theta_error))
 
-        print('Ep_step = {}, \tState = {}, \tDist2Goal = {}, alignment_error = {}'.format(self.episode_step, self.state, self._goal_dist(), theta_error))
+        screen_width = 600
+        screen_height = 400
+
+        if self.viewer is None:
+            from envs import pyglet_rendering
+            self.viewer = pyglet_rendering.Viewer(screen_width, screen_height)
+            # Draw obstacles
+            obstacles = []
+            for i in range(len(self.hazards_locations)):
+                obstacles.append(
+                    pyglet_rendering.make_circle(radius=to_pixel(self.hazards_radius, shift=0), filled=True))
+                obs_trans = pyglet_rendering.Transform(translation=(
+                to_pixel(self.hazards_locations[i][0], shift=screen_width / 2),
+                to_pixel(self.hazards_locations[i][1], shift=screen_height / 2)))
+                obstacles[i].set_color(1.0, 0.0, 0.0)
+                obstacles[i].add_attr(obs_trans)
+                self.viewer.add_geom(obstacles[i])
+
+            # Make Goal
+            goal = pyglet_rendering.make_circle(radius=to_pixel(0.1, shift=0), filled=True)
+            goal_trans = pyglet_rendering.Transform(translation=(
+            to_pixel(self.goal_pos[0], shift=screen_width / 2), to_pixel(self.goal_pos[1], shift=screen_height / 2)))
+            goal.add_attr(goal_trans)
+            goal.set_color(0.0, 0.5, 0.0)
+            self.viewer.add_geom(goal)
+
+            # Make Robot
+            self.robot = pyglet_rendering.make_circle(radius=to_pixel(0.1), filled=True)
+            self.robot_trans = pyglet_rendering.Transform(translation=(
+            to_pixel(self.state[0], shift=screen_width / 2), to_pixel(self.state[1], shift=screen_height / 2)))
+            self.robot_trans.set_rotation(self.state[2])
+            self.robot.add_attr(self.robot_trans)
+            self.robot.set_color(0.5, 0.5, 0.8)
+            self.viewer.add_geom(self.robot)
+            self.robot_orientation = pyglet_rendering.Line(start=(0.0, 0.0), end=(15.0, 0.0))
+            self.robot_orientation.linewidth.stroke = 2
+            self.robot_orientation.add_attr(self.robot_trans)
+            self.robot_orientation.set_color(0, 0, 0)
+            self.viewer.add_geom(self.robot_orientation)
+
+        if self.state is None:
+            return None
+
+        self.robot_trans.set_translation(to_pixel(self.state[0], shift=screen_width / 2),
+                                         to_pixel(self.state[1], shift=screen_height / 2))
+        self.robot_trans.set_rotation(self.state[2])
+
+        return self.viewer.render(return_rgb_array=mode == "rgb_array")
 
     def get_obs(self):
         """Given the state, this function returns it to an observation akin to the one obtained by calling env.step
