@@ -177,17 +177,19 @@ def train(agent, env, dynamics_model, args, experiment=None):
             print("----------------------------------------")
 
 
-def test(num_episodes, agent, env, dynamics_model, evaluate, model_path, visualize=True, debug=False):
+def test(agent, env, dynamics_model, evaluate, model_path, visualize=True, debug=False):
 
     agent.load_weights(model_path)
     dynamics_model.load_disturbance_models(model_path)
 
     def policy(observation):
-        return agent.select_action(observation, dynamics_model, evaluate=True)
+        if args.use_comp:
+            action, action_comp, action_cbf = agent.select_action(observation, dynamics_model, evaluate=True)
+        else:
+            action = agent.select_action(observation, dynamics_model,evaluate=True)
+        return action
 
-    for i in range(num_episodes):
-        validate_reward = evaluate(env, policy, dynamics_model=dynamics_model, debug=debug, visualize=visualize, save=False)
-        if debug: prYellow('[Evaluate] #{}: mean_reward:{}'.format(i, validate_reward))
+    evaluate(env, policy, dynamics_model=dynamics_model, debug=debug, visualize=visualize, save=False)
 
 
 if __name__ == "__main__":
@@ -310,8 +312,6 @@ if __name__ == "__main__":
         np.random.seed(args.seed)
         dynamics_model.seed(args.seed)
 
-    evaluate = Evaluator(args.validate_episodes, args.validate_steps, args.output)
-
     # If model based, we warm up in the model too
     if args.model_based:
         args.start_steps /= (1 + args.rollout_batch_size)
@@ -319,7 +319,8 @@ if __name__ == "__main__":
     if args.mode == 'train':
         train(agent, env, dynamics_model, args, experiment)
     elif args.mode == 'test':
-        test(args.validate_episodes, agent, env, dynamics_model, evaluate, args.resume, visualize=args.visualize, debug=True)
+        evaluate = Evaluator(args.validate_episodes, args.validate_steps, args.output)
+        test(agent, env, dynamics_model, evaluate, args.resume, visualize=args.visualize, debug=True)
 
     env.close()
 

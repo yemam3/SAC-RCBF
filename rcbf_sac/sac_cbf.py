@@ -192,6 +192,7 @@ class RCBF_SAC(object):
             self.critic.state_dict(),
             '{}/critic.pkl'.format(output)
         )
+        self.compensator.save_model(output)
 
     # Load model parameters
     def load_weights(self, output):
@@ -201,10 +202,10 @@ class RCBF_SAC(object):
         self.policy.load_state_dict(
             torch.load('{}/actor.pkl'.format(output), map_location=torch.device(self.device))
         )
-
         self.critic.load_state_dict(
             torch.load('{}/critic.pkl'.format(output), map_location=torch.device(self.device))
         )
+        self.compensator.load_weights(output)
 
     def load_model(self, actor_path, critic_path):
         if actor_path is not None:
