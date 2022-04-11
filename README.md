@@ -63,13 +63,13 @@ The two environments are `Unicycle` and `SimulatedCars`. `Unicycle` involves a u
 ### `SimulatedCars` Env:
 
 * Training the proposed approach: 
-`python main.py --env SimulatedCars --gamma_b 50 --max_episodes 200 --cuda --updates_per_step 2 --batch_size 512  --seed 12345 --model_based`
+`python main.py --env SimulatedCars --gamma_b 20 --max_episodes 200 --cuda --updates_per_step 2 --batch_size 512  --seed 12345 --model_based`
 
 * Training the baseline:
-`python main.py --env SimulatedCars --gamma_b 50 --max_episodes 200 --cuda --updates_per_step 1 --batch_size 256  --seed 12345 --no_diff_qp`
+`python main.py --env SimulatedCars --gamma_b 20 --max_episodes 200 --cuda --updates_per_step 1 --batch_size 256  --seed 12345 --no_diff_qp`
 
 * Training the modified approach from "End-to-End Safe Reinforcement Learning through Barrier Functions for Safety-Critical Continuous Control Tasks": 
-`python main.py --env SimulatedCars --gamma_b 50 --max_episodes 200 --cuda --updates_per_step 1 --batch_size 256   --seed 12345 --no_diff_qp --use_comp True`
+`python main.py --env SimulatedCars --gamma_b 20 --max_episodes 200 --cuda --updates_per_step 1 --batch_size 256   --seed 12345 --no_diff_qp --use_comp True`
 
 ### Testing
 
