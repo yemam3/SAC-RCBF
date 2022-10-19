@@ -1,4 +1,4 @@
-# SAC-RCBF 
+# SAC-RCBF (DEPRECATED, repo from updated paper [here](https://github.com/yemam3/Mod-RL-RCBF))
 
 Repository containing the code for the paper "Safe  Model-Based  Reinforcement  Learning using Robust Control Barrier Functions". Specifically, an implementation of SAC + Robust Control Barrier Functions (RCBFs) for safe reinforcement learning in two custom environments.
 
